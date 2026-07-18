@@ -66,7 +66,8 @@ db.exec(`
 `);
 
 // Per-job payloads
-// keyed: "file:/usage:/node:/nodedirect:<index>"
+// final: "file:/usage:/node:/nodedirect:<index>"
+// transient while running: "checkpoint:*" and "stats:<fetchIndex>"
 db.exec(`
   CREATE TABLE IF NOT EXISTS job_data (
     job_id TEXT NOT NULL,
@@ -236,6 +237,37 @@ const statements = {
 
   getJobData: db.prepare(`
     SELECT data FROM job_data WHERE job_id = ? AND key = ?
+  `),
+
+  clearJobData: db.prepare(`
+    DELETE FROM job_data WHERE job_id = ?
+  `),
+
+  getJobDataPage: db.prepare(`
+    SELECT key, data FROM job_data
+    WHERE job_id = ? AND key LIKE ? AND key > ?
+    ORDER BY key
+    LIMIT ?
+  `),
+
+  deleteJobDataLike: db.prepare(`
+    DELETE FROM job_data WHERE job_id = ? AND key LIKE ?
+  `),
+
+  copyJobData: db.prepare(`
+    INSERT OR REPLACE INTO job_data (job_id, key, data)
+    SELECT ?, ?, data FROM job_data WHERE job_id = ? AND key = ?
+  `),
+
+  clearJobCheckpoints: db.prepare(`
+    DELETE FROM job_data
+    WHERE job_id = ? AND (key LIKE 'stats:%' OR key LIKE 'checkpoint:%')
+  `),
+
+  cleanupStaleCheckpoints: db.prepare(`
+    DELETE FROM job_data
+    WHERE (key LIKE 'stats:%' OR key LIKE 'checkpoint:%')
+      AND job_id IN (SELECT id FROM jobs WHERE status NOT IN ('pending', 'running'))
   `),
 
   deleteOrphanJobData: db.prepare(`
@@ -418,22 +450,57 @@ function cleanupOldJobs(daysOld = JOB_RETENTION_DAYS) {
   const result = statements.deleteOldJobs.run(cutoffTime, cutoffTime, graceCutoff);
   statements.deleteOrphanJobData.run();
   statements.deleteOrphanJobSaves.run();
+  // Checkpoints of jobs that ended without their own cleanup running
+  statements.cleanupStaleCheckpoints.run();
   return result.changes;
 }
 
-const storeJobDetailsTx = db.transaction((jobId, entries) => {
-  for (const entry of entries) {
-    statements.setJobData.run(jobId, entry.key, entry.data);
+const storeJobDetailChunkTx = db.transaction((jobId, rows) => {
+  for (const row of rows) {
+    statements.setJobData.run(jobId, row.key, row.data);
   }
 });
 
-// Gzip rows before the transaction takes the write lock
-function storeJobDetails(jobId, entries) {
-  const compressed = entries.map((entry) => ({
-    key: entry.key,
-    data: zlib.gzipSync(entry.data),
-  }));
-  storeJobDetailsTx(jobId, compressed);
+// Rows arrive pre-gzipped; callers chunk writes and yield between them
+function storeJobDetailChunk(jobId, rows) {
+  storeJobDetailChunkTx(jobId, rows);
+}
+
+// Full wipe, so no stale keys survive a re-run
+function clearJobData(jobId) {
+  statements.clearJobData.run(jobId);
+}
+
+// Keyset pagination, so large scans hold no iterator open across writes
+function getJobDataPage(jobId, likePattern, afterKey, limit) {
+  return statements.getJobDataPage.all(jobId, likePattern, afterKey, limit);
+}
+
+// One transaction, so resume never sees a half-deleted namespace
+const deleteJobDataMatchingTx = db.transaction((jobId, patterns) => {
+  for (const pattern of patterns) {
+    statements.deleteJobDataLike.run(jobId, pattern);
+  }
+});
+
+function deleteJobDataMatching(jobId, patterns) {
+  deleteJobDataMatchingTx(jobId, patterns);
+}
+
+// Copy rows to new keys inside SQLite; data never crosses into JS
+const copyJobDataChunkTx = db.transaction((jobId, pairs) => {
+  for (const [fromKey, toKey] of pairs) {
+    statements.copyJobData.run(jobId, toKey, jobId, fromKey);
+  }
+});
+
+function copyJobDataChunk(jobId, pairs) {
+  copyJobDataChunkTx(jobId, pairs);
+}
+
+// Called only after completeJob, so earlier crashes keep the checkpoints
+function clearJobCheckpoints(jobId) {
+  statements.clearJobCheckpoints.run(jobId);
 }
 
 // Gzipped JSON Buffer (null if absent)
@@ -473,6 +540,11 @@ module.exports = {
   countUserPendingJobs,
   cleanupOldJobs,
   resetStaleRunningJobs,
-  storeJobDetails,
+  storeJobDetailChunk,
+  clearJobData,
+  getJobDataPage,
+  deleteJobDataMatching,
+  copyJobDataChunk,
+  clearJobCheckpoints,
   getJobData,
 };

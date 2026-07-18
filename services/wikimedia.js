@@ -1,5 +1,6 @@
 const crypto = require("crypto");
-const { acquireSlot, pauseAll } = require("./requestScheduler");
+const { createThrottle } = require("./requestScheduler");
+const { mapWithConcurrency } = require("../utils/concurrency");
 
 const WIKIMEDIA_API_BASE = "https://wikimedia.org/api/rest_v1/metrics";
 const COMMONS_API_URL = "https://commons.wikimedia.org/w/api.php";
@@ -8,6 +9,35 @@ const BASE_USER_AGENT = `WikimediaSightglass/1.0 (${process.env.CONTACT_EMAIL ||
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 10000;
+
+// ms between AQS stats requests; AQS tolerates far higher rates than the
+// action API
+const AQS_REQUEST_DELAY = Math.max(
+  parseInt(process.env.AQS_REQUEST_DELAY, 10) || 40,
+  1,
+);
+
+// ms between requests to the Commons action API (crawl + metadata)
+const COMMONS_REQUEST_DELAY = Math.max(
+  parseInt(process.env.COMMONS_REQUEST_DELAY, 10) || 100,
+  1,
+);
+
+// Max in-flight requests per fetch loop; overlaps latency without raising
+// the outbound rate
+const FETCH_CONCURRENCY = Math.max(
+  parseInt(process.env.FETCH_CONCURRENCY, 10) || 8,
+  1,
+);
+
+// Each API gets its own process-wide throttle
+const aqsThrottle = createThrottle(AQS_REQUEST_DELAY);
+const commonsThrottle = createThrottle(COMMONS_REQUEST_DELAY);
+
+function throttleFor(url) {
+  const host = url instanceof URL ? url.host : new URL(url).host;
+  return host === "wikimedia.org" ? aqsThrottle : commonsThrottle;
+}
 
 // Cap on files enumerated per job; each file later costs a pageviews request
 const MAX_FILES_PER_JOB = Math.max(
@@ -138,8 +168,9 @@ async function fetchWithRetry(url, options = {}, lane, retries = MAX_RETRIES) {
       MAX_RETRY_DELAY,
     );
   const target = (typeof url === "string" ? url : url.toString()).slice(0, 100);
+  const throttle = throttleFor(url);
 
-  await acquireSlot(lane);
+  await throttle.acquireSlot(lane);
   try {
     const response = await fetch(url, options);
     const retriable =
@@ -156,7 +187,7 @@ async function fetchWithRetry(url, options = {}, lane, retries = MAX_RETRIES) {
         `Wikimedia API ${response.status}; retrying in ${wait}ms (${retries - 1} left): ${target}`,
       );
       if (response.status === 429) {
-        pauseAll(wait); // retry re-acquires a slot
+        throttle.pauseAll(wait); // retry re-acquires a slot
       } else {
         await sleep(wait);
       }
@@ -251,6 +282,8 @@ function checkCrawlBudget(tally) {
   }
 }
 
+const SUBCAT_NAMESPACE = 14;
+
 /** A category's subtree of direct files and child categories */
 async function fetchCategoryTree(
   categoryName,
@@ -266,6 +299,7 @@ async function fetchCategoryTree(
   visited.add(categoryName);
 
   const node = { name: categoryName, files: [], children: [] };
+  const subcategories = [];
   const maxFiles = tally.maxFiles || MAX_FILES_PER_JOB;
   let continueToken = null;
 
@@ -276,7 +310,8 @@ async function fetchCategoryTree(
     apiUrl.searchParams.set("format", "json");
     apiUrl.searchParams.set("list", "categorymembers");
     apiUrl.searchParams.set("cmtitle", categoryName);
-    apiUrl.searchParams.set("cmtype", "file");
+    // One pass collects files and, when recursing, subcategories too
+    apiUrl.searchParams.set("cmtype", depth > 0 ? "file|subcat" : "file");
     apiUrl.searchParams.set("cmlimit", "500"); // max per request
 
     if (continueToken) {
@@ -304,9 +339,15 @@ async function fetchCategoryTree(
       break;
     }
 
-    node.files.push(...data.query.categorymembers);
+    for (const member of data.query.categorymembers) {
+      if (member.ns === SUBCAT_NAMESPACE) {
+        subcategories.push(member.title);
+      } else {
+        node.files.push(member);
+        tally.fileCount += 1;
+      }
+    }
 
-    tally.fileCount += data.query.categorymembers.length;
     if (tally.fileCount > maxFiles) {
       throw apiError({
         message: `Category contains more than ${maxFiles.toLocaleString("en-US")} files. Please choose a smaller category or reduce the subcategory depth.`,
@@ -319,27 +360,15 @@ async function fetchCategoryTree(
     continueToken = data.continue ? data.continue.cmcontinue : null;
   } while (continueToken);
 
-  if (depth > 0) {
-    const subcategories = await fetchSubcategories(
-      categoryName,
-      userAgent,
-      lane,
-      tally,
+  if (subcategories.length > 0) {
+    // Concurrent siblings stay throttle-paced; `visited` dedupes on entry
+    const children = await mapWithConcurrency(
+      subcategories,
+      FETCH_CONCURRENCY,
+      (subcat) =>
+        fetchCategoryTree(subcat, userAgent, depth - 1, lane, visited, tally),
     );
-
-    for (const subcat of subcategories) {
-      const child = await fetchCategoryTree(
-        subcat,
-        userAgent,
-        depth - 1,
-        lane,
-        visited,
-        tally,
-      );
-      if (child) {
-        node.children.push(child);
-      }
-    }
+    node.children = children.filter(Boolean);
   }
 
   return node;
@@ -352,53 +381,6 @@ function collectTreeFiles(node, files = []) {
     collectTreeFiles(child, files);
   }
   return files;
-}
-
-async function fetchSubcategories(categoryName, userAgent, lane, tally = {}) {
-  const subcategories = [];
-  let continueToken = null;
-
-  do {
-    checkCrawlBudget(tally);
-    const apiUrl = new URL(COMMONS_API_URL);
-    apiUrl.searchParams.set("action", "query");
-    apiUrl.searchParams.set("format", "json");
-    apiUrl.searchParams.set("list", "categorymembers");
-    apiUrl.searchParams.set("cmtitle", categoryName);
-    apiUrl.searchParams.set("cmtype", "subcat");
-    apiUrl.searchParams.set("cmlimit", "500");
-
-    if (continueToken) {
-      apiUrl.searchParams.set("cmcontinue", continueToken);
-    }
-
-    const response = await fetchWithRetry(
-      apiUrl,
-      {
-        headers: {
-          "User-Agent": userAgent,
-          Accept: "application/json",
-        },
-      },
-      lane,
-    );
-
-    if (!response.ok) {
-      throw apiError(await handleApiError(response, "fetchSubcategories"));
-    }
-
-    const data = await response.json();
-
-    if (!data.query || !data.query.categorymembers) {
-      break;
-    }
-
-    subcategories.push(...data.query.categorymembers.map((cat) => cat.title));
-
-    continueToken = data.continue ? data.continue.cmcontinue : null;
-  } while (continueToken);
-
-  return subcategories;
 }
 
 /** Reduce a Commons extmetadata HTML value (link, or a credit table) to text */
@@ -470,10 +452,15 @@ async function fetchFileMetadata(
     return metadata.get(key);
   };
 
+  const batches = [];
   for (let offset = 0; offset < titles.length; offset += METADATA_BATCH_SIZE) {
+    batches.push(titles.slice(offset, offset + METADATA_BATCH_SIZE));
+  }
+
+  await mapWithConcurrency(batches, FETCH_CONCURRENCY, async (batch, batchIndex) => {
     checkCancelled();
 
-    const batch = titles.slice(offset, offset + METADATA_BATCH_SIZE);
+    const offset = batchIndex * METADATA_BATCH_SIZE;
     const params = {
       action: "query",
       format: "json",
@@ -568,7 +555,7 @@ async function fetchFileMetadata(
         `⚠️  Metadata batch at ${offset} failed (${error.message}); continuing without metadata for those files`,
       );
     }
-  }
+  });
 
   return metadata;
 }
@@ -597,6 +584,7 @@ function normalizeFilename(filename) {
 
 module.exports = {
   COMMONS_API_URL,
+  FETCH_CONCURRENCY,
   validateStatsParams,
   buildStatsUrl,
   getUserAgent,

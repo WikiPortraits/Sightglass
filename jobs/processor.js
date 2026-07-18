@@ -4,8 +4,11 @@ const {
   completeJob,
   failJob,
   getJob,
+  getJobMeta,
   getPendingJobs,
   resetStaleRunningJobs,
+  clearJobData,
+  clearJobCheckpoints,
 } = require("../db");
 
 // Bounds memory, not API load; each running job holds its full result set
@@ -74,6 +77,7 @@ async function runJob(jobId) {
     // startJob flips pending -> running only, so a cancel landing here survives
     if (!startJob(jobId)) {
       console.log(`⏹️  Job ${jobId} was cancelled before starting`);
+      clearJobData(jobId); // checkpoints from a pre-restart run
       return;
     }
 
@@ -95,24 +99,29 @@ async function runJob(jobId) {
 
     const result = await handler(jobId, job.parameters, progressCallback);
 
-    // Cancelled during execution
-    job = getJob(jobId);
+    // Cancelled during execution (status only; skips the result column)
+    job = getJobMeta(jobId);
     if (job && job.status === "cancelled") {
       console.log(`⏹️  Job ${jobId} was cancelled during execution`);
+      clearJobData(jobId);
     } else {
       completeJob(jobId, result);
+      // Checkpoints are disposable only once the result is stored
+      clearJobCheckpoints(jobId);
       console.log(`✅ Job ${jobId} completed successfully`);
     }
   } catch (error) {
     // Error may just be the cancellation
-    const job = getJob(jobId);
+    const job = getJobMeta(jobId);
     if (job && job.status === "cancelled") {
       console.log(
         `⏹️  Job ${jobId} was cancelled during execution: ${error.message}`,
       );
+      clearJobData(jobId);
     } else {
       console.error(`❌ Job ${jobId} failed:`, error);
       failJob(jobId, error.message ? error : "Unknown error");
+      clearJobData(jobId); // failed jobs keep only their error
     }
   } finally {
     lastProgressUpdate.delete(jobId);
@@ -122,6 +131,7 @@ async function runJob(jobId) {
 // Call on startup
 function restorePendingJobs() {
   // Jobs left 'running' when server stopped are orphaned; requeue them
+  // (their checkpoints survive, so they resume rather than start over)
   const resetCount = resetStaleRunningJobs();
   if (resetCount > 0) {
     console.log(`🔄 Reset ${resetCount} stale 'running' job(s) to 'pending'`);
@@ -180,8 +190,9 @@ function shutdown(timeout = 30000) {
 }
 
 // Throws if job is cancelled
+// Called per work item, so reads status only
 function checkJobCancelled(jobId) {
-  const job = getJob(jobId);
+  const job = getJobMeta(jobId);
   if (job && job.status === "cancelled") {
     throw new Error("Job cancelled by user");
   }
