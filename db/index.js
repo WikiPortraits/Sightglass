@@ -148,32 +148,12 @@ const statements = {
     LIMIT ?
   `),
 
-  getSavedJobsMine: db.prepare(`
+  getSavedJobsForUser: db.prepare(`
     SELECT id, type, status, created_at, started_at, completed_at, progress, total, parameters,
       1 AS is_saved,
       (owner_id = ?) AS is_owner
     FROM jobs
     WHERE EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?)
-    ORDER BY created_at DESC
-    LIMIT ?
-  `),
-
-  getSavedJobsAll: db.prepare(`
-    SELECT id, type, status, created_at, started_at, completed_at, progress, total, parameters,
-      EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?) AS is_saved,
-      (owner_id = ?) AS is_owner
-    FROM jobs
-    WHERE EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id)
-    ORDER BY created_at DESC
-    LIMIT ?
-  `),
-
-  getSavedJobsByOthers: db.prepare(`
-    SELECT id, type, status, created_at, started_at, completed_at, progress, total, parameters,
-      EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?) AS is_saved,
-      (owner_id = ?) AS is_owner
-    FROM jobs
-    WHERE EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id != ?)
     ORDER BY created_at DESC
     LIMIT ?
   `),
@@ -383,16 +363,8 @@ function getAllJobs(limit = 200) {
 
 // scope: all | mine | others
 // is_saved reflects the requesting user's own save
-function getSavedJobsByScope(userId, scope = "all", limit = 50) {
-  let jobs;
-
-  if (scope === "mine") {
-    jobs = statements.getSavedJobsMine.all(userId, userId, limit);
-  } else if (scope === "others") {
-    jobs = statements.getSavedJobsByOthers.all(userId, userId, userId, limit);
-  } else {
-    jobs = statements.getSavedJobsAll.all(userId, userId, limit);
-  }
+function getSavedJobsForUser(userId, limit = 50) {
+  const jobs = statements.getSavedJobsForUser.all(userId, userId, limit);
 
   return jobs.map((job) => ({
     ...job,
@@ -531,7 +503,7 @@ module.exports = {
   cancelJob,
   getUserJobs,
   getAllJobs,
-  getSavedJobsByScope,
+  getSavedJobsForUser,
   saveJob,
   unsaveJob,
   countJobSaves,

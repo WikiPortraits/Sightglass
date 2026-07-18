@@ -9,7 +9,7 @@ const {
   getJobResultRaw,
   getUserJobs,
   getAllJobs,
-  getSavedJobsByScope,
+  getSavedJobsForUser,
   saveJob,
   unsaveJob,
   countJobSaves,
@@ -158,24 +158,16 @@ router.get(
 );
 
 /**
- * Saved jobs, filtered by scope
- * GET /api/jobs/saved?scope=all|mine|others&limit=50
+ * Jobs saved by the current user
+ * GET /api/jobs/saved?limit=50
  */
 router.get("/api/jobs/saved", requireAuth, apiLimiter, async (req, res) => {
   try {
-    const { scope = "all", limit = 50 } = req.query;
+    const { limit = 50 } = req.query;
     const userId = req.session.user.centralId;
 
-    if (!["all", "mine", "others"].includes(scope)) {
-      return res.status(400).json({
-        error: "Invalid scope",
-        message: "Scope must be one of: all, mine, others",
-      });
-    }
-
-    const jobs = getSavedJobsByScope(
+    const jobs = getSavedJobsForUser(
       userId,
-      scope,
       Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100),
     );
     res.json(

@@ -284,21 +284,15 @@ function checkCrawlBudget(tally) {
 
 const SUBCAT_NAMESPACE = 14;
 
-/** A category's subtree of direct files and child categories */
-async function fetchCategoryTree(
+/** One category's paginated listing: member files and subcategory names */
+async function fetchCategoryListing(
   categoryName,
+  includeSubcats,
   userAgent,
-  depth = 0,
-  lane = undefined,
-  visited = new Set(),
-  tally = { fileCount: 0 },
+  lane,
+  tally,
 ) {
-  if (visited.has(categoryName)) {
-    return null;
-  }
-  visited.add(categoryName);
-
-  const node = { name: categoryName, files: [], children: [] };
+  const files = [];
   const subcategories = [];
   const maxFiles = tally.maxFiles || MAX_FILES_PER_JOB;
   let continueToken = null;
@@ -311,7 +305,7 @@ async function fetchCategoryTree(
     apiUrl.searchParams.set("list", "categorymembers");
     apiUrl.searchParams.set("cmtitle", categoryName);
     // One pass collects files and, when recursing, subcategories too
-    apiUrl.searchParams.set("cmtype", depth > 0 ? "file|subcat" : "file");
+    apiUrl.searchParams.set("cmtype", includeSubcats ? "file|subcat" : "file");
     apiUrl.searchParams.set("cmlimit", "500"); // max per request
 
     if (continueToken) {
@@ -343,7 +337,7 @@ async function fetchCategoryTree(
       if (member.ns === SUBCAT_NAMESPACE) {
         subcategories.push(member.title);
       } else {
-        node.files.push(member);
+        files.push(member);
         tally.fileCount += 1;
       }
     }
@@ -360,18 +354,56 @@ async function fetchCategoryTree(
     continueToken = data.continue ? data.continue.cmcontinue : null;
   } while (continueToken);
 
-  if (subcategories.length > 0) {
-    // Concurrent siblings stay throttle-paced; `visited` dedupes on entry
-    const children = await mapWithConcurrency(
-      subcategories,
-      FETCH_CONCURRENCY,
-      (subcat) =>
-        fetchCategoryTree(subcat, userAgent, depth - 1, lane, visited, tally),
+  return { files, subcategories };
+}
+
+/**
+ * A category's subtree of direct files and child categories.
+ * Crawled level-by-level so a category reachable by several paths is
+ * always claimed at its shallowest depth.
+ */
+async function fetchCategoryTree(
+  categoryName,
+  userAgent,
+  depth = 0,
+  lane = undefined,
+  visited = new Set(),
+  tally = { fileCount: 0 },
+) {
+  if (visited.has(categoryName)) {
+    return null;
+  }
+  visited.add(categoryName);
+
+  const root = { name: categoryName, files: [], children: [] };
+  let tier = [root];
+  let remaining = depth;
+
+  while (tier.length > 0) {
+    const listings = await mapWithConcurrency(tier, FETCH_CONCURRENCY, (node) =>
+      fetchCategoryListing(node.name, remaining > 0, userAgent, lane, tally),
     );
-    node.children = children.filter(Boolean);
+
+    // Claim children only after the whole tier is fetched, in tier order,
+    // so ties between same-depth parents resolve deterministically
+    const nextTier = [];
+    tier.forEach((node, index) => {
+      node.files = listings[index].files;
+      for (const name of listings[index].subcategories) {
+        if (visited.has(name)) {
+          continue;
+        }
+        visited.add(name);
+        const child = { name, files: [], children: [] };
+        node.children.push(child);
+        nextTier.push(child);
+      }
+    });
+    tier = nextTier;
+    remaining--;
   }
 
-  return node;
+  return root;
 }
 
 /** Flatten a category tree into its member files */

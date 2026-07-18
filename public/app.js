@@ -2,7 +2,6 @@ let currentData = null;
 let searchTimeout = null;
 let chart = null;
 let currentQueryFilter = "all";
-let currentSaveScope = "all";
 // Days before unsaved jobs are deleted (JOB_RETENTION_DAYS, injected at render time)
 const retentionDays = Number(document.body.dataset.retentionDays) || 30;
 // Extra days granted after a job's last save is removed (JOB_UNSAVE_GRACE_DAYS)
@@ -125,9 +124,7 @@ async function loadJobHistory() {
 
   try {
     const endpoint =
-      currentQueryFilter === "saved"
-        ? `/api/jobs/saved?scope=${encodeURIComponent(currentSaveScope)}`
-        : "/api/jobs";
+      currentQueryFilter === "saved" ? "/api/jobs/saved" : "/api/jobs";
     const response = await fetch(endpoint);
     if (!response.ok) {
       throw new Error("Failed to load jobs");
@@ -149,13 +146,7 @@ async function loadJobHistory() {
           messageText.textContent = t("index.noMatchingFilters");
           if (getStartedButton) getStartedButton.style.display = "none";
         } else if (currentQueryFilter === "saved") {
-          if (currentSaveScope === "mine") {
-            messageText.textContent = t("index.noSavedMine");
-          } else if (currentSaveScope === "others") {
-            messageText.textContent = t("index.noSavedOthers");
-          } else {
-            messageText.textContent = t("index.noSaved");
-          }
+          messageText.textContent = t("index.noSaved");
           if (getStartedButton) getStartedButton.style.display = "none";
         } else {
           messageText.textContent = t("index.noQueriesYet");
@@ -795,33 +786,7 @@ function setupFilterTabs() {
 
       currentQueryFilter = this.dataset.filter;
 
-      const saveScopeFilters = document.getElementById("save-scope-filters");
-      if (saveScopeFilters) {
-        saveScopeFilters.style.display =
-          currentQueryFilter === "saved" ? "flex" : "none";
-      }
-
       loadJobHistory();
-    });
-  });
-
-  const scopeButtons = document.querySelectorAll(".save-scope-btn");
-  scopeButtons.forEach((button) => {
-    if (button.dataset.scopeBound === "true") return;
-    button.dataset.scopeBound = "true";
-
-    button.addEventListener("click", function () {
-      scopeButtons.forEach((btn) => {
-        btn.classList.remove("active");
-        btn.setAttribute("aria-pressed", "false");
-      });
-      this.classList.add("active");
-      this.setAttribute("aria-pressed", "true");
-
-      currentSaveScope = this.dataset.scope;
-      if (currentQueryFilter === "saved") {
-        loadJobHistory();
-      }
     });
   });
 

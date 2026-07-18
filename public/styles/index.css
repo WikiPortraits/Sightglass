@@ -86,29 +86,6 @@
   background: transparent;
 }
 
-.save-scope-filters {
-  display: flex;
-  gap: var(--spacing-xs);
-  margin-bottom: var(--spacing-md);
-  flex-wrap: wrap;
-}
-
-.save-scope-btn {
-  background: transparent;
-  border: var(--border-width) solid var(--border-color);
-  color: var(--text-muted);
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.save-scope-btn.active {
-  color: var(--primary-color);
-  border-color: var(--primary-color);
-  background: var(--bg-light);
-}
-
 .jobs-visibility-filters {
   margin-bottom: var(--spacing-md);
 }
@@ -259,10 +236,6 @@
     flex: 1;
     min-width: 100px;
     padding: var(--spacing-sm) var(--spacing-md);
-  }
-
-  .save-scope-filters {
-    flex-direction: column;
   }
 
   .jobs-visibility-filters {
