@@ -129,13 +129,15 @@ const JOB_SORT_ACCESSORS = {
   dateRange: (job) => getJobParams(job).start || "",
   granularity: (job) => getJobParams(job).granularity || "daily",
   depth: (job) => Number(getJobParams(job).depth ?? 0),
+  // Jobs without a result yet sort below zero-view results
+  views: (job) => (job.total_views == null ? -1 : Number(job.total_views)),
   created: (job) => Number(job.created_at),
   status: (job) => job.status || "",
   saves: (job) => Number(job.save_count) || 0,
 };
 
 // First-click direction per column
-const JOB_SORT_DEFAULT_DIR = { created: "desc", saves: "desc" };
+const JOB_SORT_DEFAULT_DIR = { created: "desc", saves: "desc", views: "desc" };
 
 function compareJobs(a, b, key, dir) {
   const accessor = JOB_SORT_ACCESSORS[key] || JOB_SORT_ACCESSORS.created;
@@ -307,6 +309,11 @@ function renderJobRow(job) {
     depth = params.depth !== undefined ? params.depth : "0";
   }
 
+  const totalViews =
+    job.total_views == null
+      ? '<span class="views-none" aria-hidden="true">—</span>'
+      : escapeHtml(Number(job.total_views).toLocaleString(MediaViewI18n.locale()));
+
   const saveCount = Number(job.save_count) || 0;
   const savesCell = saveCount
     ? `<span title="${escapeHtml(t("admin.savedByCount", saveCount))}" aria-label="${escapeHtml(t("admin.savedByCount", saveCount))}">${saveCount}</span>`
@@ -333,13 +340,13 @@ function renderJobRow(job) {
       <td class="date-range-cell">${escapeHtml(dateRange)}</td>
       <td class="granularity-cell">${escapeHtml(granularity)}</td>
       <td class="depth-cell">${escapeHtml(depth)}</td>
+      <td class="total-views-cell">${totalViews}</td>
       <td class="created-cell">
         <div class="created-date">${escapeHtml(formattedDate)}</div>
         <div class="created-time">${escapeHtml(formattedTime)}</div>
       </td>
       <td class="status-cell">${renderStatusBadge(job)}</td>
       <td class="save-cell">${savesCell}</td>
-      <td class="actions-cell"><span class="table-arrow-btn" aria-hidden="true">→</span></td>
     </tr>
   `;
 }

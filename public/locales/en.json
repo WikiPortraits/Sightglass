@@ -38,6 +38,7 @@
   "index.colGranularity": "Granularity",
   "index.colDepth": "Depth",
   "index.colDepthTitle": "Subcategory Depth",
+  "index.colTotalViews": "Total Views",
   "index.colCreated": "Created",
   "index.colStatus": "Status",
   "index.sortBySaved": "Sort by saved",

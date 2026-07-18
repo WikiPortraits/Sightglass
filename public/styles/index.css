@@ -320,6 +320,10 @@
   font-size: 1rem;
 }
 
+#jobs-table th.col-total-views .th-sort {
+  justify-content: flex-end;
+}
+
 /* Sort direction indicator */
 #jobs-table .sort-indicator {
   opacity: 0;
@@ -388,6 +392,17 @@
   text-align: center;
   font-size: 0.75rem;
   width: 45px;
+}
+
+.jobs-table-compact .total-views-cell {
+  text-align: right;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.jobs-table-compact .total-views-cell .views-none {
+  color: var(--text-muted);
 }
 
 .jobs-table-compact .created-cell {
@@ -465,14 +480,6 @@
   padding-right: var(--spacing-xs);
 }
 
-#jobs-table .actions-cell {
-  text-align: right;
-  width: 80px;
-  white-space: nowrap;
-  padding-left: var(--spacing-xs);
-  padding-right: var(--spacing-xs);
-}
-
 #jobs-table .save-btn {
   display: inline-flex;
   align-items: center;
@@ -508,41 +515,12 @@
   cursor: not-allowed;
 }
 
-#jobs-table .cancel-job-btn,
-#jobs-table .actions-cell .button {
+#jobs-table .cancel-job-btn {
   min-width: 32px;
   width: 32px;
   height: 32px;
   padding: 0;
   font-size: 0.875rem;
-}
-
-#jobs-table .table-arrow-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--text-color);
-  font-size: 1.125rem;
-  font-weight: var(--font-weight-bold);
-  line-height: 1;
-  text-decoration: none;
-}
-
-#jobs-table .table-arrow-btn:hover {
-  background: transparent;
-  color: var(--primary-color);
-}
-
-#jobs-table .table-arrow-btn:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
 }
 
 /* Status cell styling */
@@ -580,9 +558,5 @@
 
   #jobs-table .save-cell {
     width: 36px;
-  }
-
-  #jobs-table .actions-cell {
-    width: 70px;
   }
 }

@@ -53,6 +53,16 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id);
 `);
 
+// Total result view count, denormalized so job listings never have to
+// gunzip the stored result payload
+const jobColumns = db
+  .prepare("PRAGMA table_info(jobs)")
+  .all()
+  .map((column) => column.name);
+if (!jobColumns.includes("total_views")) {
+  db.exec("ALTER TABLE jobs ADD COLUMN total_views INTEGER");
+}
+
 // Job saves
 // Multiple users can save a job
 db.exec(`
@@ -113,8 +123,8 @@ const statements = {
   `),
 
   completeJob: db.prepare(`
-    UPDATE jobs 
-    SET status = 'completed', result = ?, completed_at = ? 
+    UPDATE jobs
+    SET status = 'completed', result = ?, total_views = ?, completed_at = ?
     WHERE id = ?
   `),
 
@@ -131,7 +141,7 @@ const statements = {
   `),
 
   getUserJobs: db.prepare(`
-    SELECT id, type, status, created_at, started_at, completed_at, unsaved_at, progress, total, parameters,
+    SELECT id, type, status, created_at, started_at, completed_at, unsaved_at, progress, total, total_views, parameters,
       EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?) AS is_saved,
       EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id != ?) AS is_saved_by_others
     FROM jobs
@@ -141,7 +151,7 @@ const statements = {
   `),
 
   getAllJobs: db.prepare(`
-    SELECT id, type, status, owner_id, username, created_at, started_at, completed_at, unsaved_at, progress, total, parameters,
+    SELECT id, type, status, owner_id, username, created_at, started_at, completed_at, unsaved_at, progress, total, total_views, parameters,
       (SELECT COUNT(*) FROM job_saves s WHERE s.job_id = jobs.id) AS save_count
     FROM jobs
     ORDER BY created_at DESC
@@ -149,7 +159,7 @@ const statements = {
   `),
 
   getSavedJobsForUser: db.prepare(`
-    SELECT id, type, status, created_at, started_at, completed_at, progress, total, parameters,
+    SELECT id, type, status, created_at, started_at, completed_at, progress, total, total_views, parameters,
       1 AS is_saved,
       (owner_id = ?) AS is_owner
     FROM jobs
@@ -261,6 +271,30 @@ const statements = {
   `),
 };
 
+// Backfill total_views for jobs completed before the column existed;
+// each row is attempted once per startup until it parses
+(function backfillTotalViews() {
+  const rows = db
+    .prepare(
+      "SELECT id, result FROM jobs WHERE status = 'completed' AND total_views IS NULL AND result IS NOT NULL",
+    )
+    .all();
+  const setTotalViews = db.prepare(
+    "UPDATE jobs SET total_views = ? WHERE id = ?",
+  );
+  for (const row of rows) {
+    try {
+      const result = JSON.parse(zlib.gunzipSync(row.result).toString());
+      const totalViews = Number(result?.totalViews);
+      if (Number.isFinite(totalViews)) {
+        setTotalViews.run(totalViews, row.id);
+      }
+    } catch (error) {
+      console.error(`Failed to backfill total_views for job ${row.id}:`, error);
+    }
+  }
+})();
+
 function createJob(id, type, ownerId, username, parameters) {
   const now = Date.now();
   statements.createJob.run(
@@ -319,7 +353,13 @@ function updateJobProgress(id, progress, total) {
 // Results are stored gzipped; getJob unzips on read
 function completeJob(id, result) {
   const now = Date.now();
-  statements.completeJob.run(zlib.gzipSync(JSON.stringify(result)), now, id);
+  const totalViews = Number(result?.totalViews);
+  statements.completeJob.run(
+    zlib.gzipSync(JSON.stringify(result)),
+    Number.isFinite(totalViews) ? totalViews : null,
+    now,
+    id,
+  );
 }
 
 // Errors carrying an i18n key are stored as JSON {message, key, params}

@@ -199,13 +199,15 @@ const JOB_SORT_ACCESSORS = {
   dateRange: (job) => getJobParams(job).start || "",
   granularity: (job) => getJobParams(job).granularity || "daily",
   depth: (job) => Number(getJobParams(job).depth ?? 0),
+  // Jobs without a result yet sort below zero-view results
+  views: (job) => (job.total_views == null ? -1 : Number(job.total_views)),
   created: (job) => Number(job.created_at),
   status: (job) => job.status || "",
   saved: (job) => (getJobSavedState(job) ? 1 : 0),
 };
 
 // First-click direction per column
-const JOB_SORT_DEFAULT_DIR = { created: "desc", saved: "desc" };
+const JOB_SORT_DEFAULT_DIR = { created: "desc", saved: "desc", views: "desc" };
 
 function compareJobs(a, b, key, dir) {
   const accessor = JOB_SORT_ACCESSORS[key] || JOB_SORT_ACCESSORS.created;
@@ -290,8 +292,6 @@ function renderJobRow(job) {
     timeZoneName: "short",
   });
 
-  const actionButton =
-    '<span class="table-arrow-btn" aria-hidden="true">→</span>';
   let statusBadge = "";
 
   // Only the creator can cancel
@@ -368,6 +368,11 @@ function renderJobRow(job) {
     depth = params.depth !== undefined ? params.depth : "0";
   }
 
+  const totalViews =
+    job.total_views == null
+      ? '<span class="views-none" aria-hidden="true">—</span>'
+      : escapeHtml(Number(job.total_views).toLocaleString(MediaViewI18n.locale()));
+
   const isSaved = getJobSavedState(job);
   const saveLabel = isSaved ? t("job.unsave") : t("job.save", retentionDays);
   const savedByOthers = Boolean(job.is_saved_by_others);
@@ -390,13 +395,13 @@ function renderJobRow(job) {
       <td class="date-range-cell">${escapeHtml(dateRange)}</td>
       <td class="granularity-cell">${escapeHtml(granularity)}</td>
       <td class="depth-cell">${escapeHtml(depth)}</td>
+      <td class="total-views-cell">${totalViews}</td>
       <td class="created-cell">
         <div class="created-date">${escapeHtml(formattedDate)}</div>
         <div class="created-time">${escapeHtml(formattedTime)}</div>
       </td>
       <td class="status-cell">${statusBadge}</td>
       <td class="save-cell">${saveButton}</td>
-      <td class="actions-cell">${actionButton}</td>
     </tr>
   `;
 }
