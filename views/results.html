@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{head}}
+    <title data-i18n="results.docTitle">
+      Job Results - Wikimedia Sightglass
+    </title>
+    <link rel="stylesheet" href="/styles/results.css" />
+  </head>
+  <body data-retention-days="{{retentionDays}}" data-unsave-grace-days="{{unsaveGraceDays}}">
+    {{header}}
+    <div class="job-container">
+      <div id="job-loading" class="loading-message" data-i18n="results.loading">
+        Loading query results…
+      </div>
+
+      <div id="job-content" style="display: none">
+        <div class="job-status">
+          <div class="job-status-header">
+            <div class="job-title-block">
+              <div class="job-status-label" data-i18n="results.mediaViewsFor">
+                Media views for Category:
+              </div>
+              <h2 id="job-category-display" class="job-category-heading">—</h2>
+            </div>
+            <div class="status-actions">
+              <span
+                id="status-badge"
+                class="status-badge"
+                aria-live="polite"
+              ></span>
+              <div id="cancel-section" class="cancel-section">
+                <button
+                  id="cancel-job-btn"
+                  class="btn btn-subtle"
+                  data-i18n="results.cancelJob"
+                >
+                  Cancel Job
+                </button>
+              </div>
+              <div id="save-section" style="display: none">
+                <!-- Title set by results.js with the configured retention period -->
+                <button
+                  id="save-job-btn"
+                  class="btn btn-subtle"
+                  data-saved="false"
+                  data-i18n="results.save"
+                >
+                  ☆ Save
+                </button>
+              </div>
+              <div id="download-section" style="display: none">
+                <button
+                  id="download-csv-btn"
+                  class="btn btn-subtle"
+                  title="Downloads an Excel workbook with sheets for the summary, views over time, views by subcategory, and per-file totals"
+                  data-i18n-title="results.downloadTitle"
+                  data-i18n="results.downloadSpreadsheet"
+                >
+                  Download Spreadsheet
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="progress-section" style="display: none">
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill">0%</div>
+            </div>
+            <div id="progress-text" class="progress-text"></div>
+          </div>
+
+          <div id="job-meta" class="job-meta-block"></div>
+
+          <!-- Text set by results.js with the configured retention period -->
+          <p
+            id="retention-note"
+            class="retention-note"
+            style="display: none"
+          ></p>
+
+          <div
+            id="share-section"
+            class="share-section-inline"
+            style="display: none"
+          >
+            <span class="job-meta-label" data-i18n="results.shareLink"
+              >Share link</span
+            >
+            <div class="share-url">
+              <input type="text" id="share-url" readonly />
+              <button
+                id="copy-share-btn"
+                class="btn btn-subtle"
+                type="button"
+                data-i18n="results.copy"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="error-section" style="display: none">
+          <div class="error-message" role="alert">
+            <strong id="error-title" data-i18n="results.jobFailed"
+              >Job Failed</strong
+            >
+            <p id="error-message"></p>
+            <p>
+              <a href="/" class="button" data-i18n="common.returnHome"
+                >Return Home</a
+              >
+            </p>
+          </div>
+        </div>
+
+        <div id="results-section" class="results-section" style="display: none">
+          <div id="scope-bar" class="scope-bar" style="display: none">
+            <nav
+              id="scope-breadcrumb"
+              class="scope-breadcrumb"
+              aria-label="Results scope"
+              data-i18n-aria-label="results.scopeAria"
+            ></nav>
+            <button
+              id="scope-clear-btn"
+              class="btn btn-subtle"
+              type="button"
+              data-i18n="results.showAll"
+            >
+              Show all
+            </button>
+          </div>
+
+          <div id="subcategory-section" style="display: none">
+            <h3 class="subcategory-heading">
+              <button
+                id="subcategory-toggle"
+                class="subcategory-toggle"
+                type="button"
+                aria-expanded="false"
+                aria-controls="subcategory-body"
+              >
+                <span class="subcategory-toggle-icon" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 12 12"
+                    width="12"
+                    height="12"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.75"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M4.5 3 7.5 6 4.5 9" />
+                  </svg>
+                </span>
+                <span
+                  class="subcategory-toggle-label"
+                  data-i18n="results.viewsBySubcategory"
+                  >Views by Subcategory</span
+                >
+                <span
+                  id="subcategory-filter-tag"
+                  class="subcategory-filter-tag"
+                  hidden
+                ></span>
+              </button>
+            </h3>
+            <div id="subcategory-body" hidden>
+              <p class="category-tree-note" data-i18n="results.treeNote">
+                Click a subcategory to filter the stats, chart, and file list
+                below to just that branch. Totals count each file once, even
+                when it appears in several subcategories, so sibling totals can
+                add up to more than their parent's. A subcategory reachable
+                through more than one parent is listed under the first one
+                found.
+              </p>
+              <div id="category-tree" class="category-tree"></div>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-value" id="stat-total-views">-</div>
+              <div class="stat-label" data-i18n="results.totalViews">
+                Total Views
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-file-count">-</div>
+              <div
+                class="stat-label"
+                id="stat-file-count-label"
+                data-i18n="results.filesProcessed"
+              >
+                Files Processed
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-avg-views">-</div>
+              <div class="stat-label" data-i18n="results.avgViewsLabel">
+                Avg Views/File (&gt;10 views)
+              </div>
+            </div>
+          </div>
+
+          <div id="chart-container">
+            <canvas
+              id="statsChart"
+              role="img"
+              aria-label="Line chart of category views over time"
+              data-i18n-aria-label="results.chartAria"
+            ></canvas>
+          </div>
+
+          <h3 id="file-list-heading" data-i18n="results.topFiles">Top Files</h3>
+          <div id="file-list" class="file-list"></div>
+        </div>
+      </div>
+    </div>
+
+    {{footer}}
+    <script src="/vendor/chart.js"></script>
+    <script src="/common.js"></script>
+    <script src="/slug.js"></script>
+    <script src="/results.js"></script>
+  </body>
+</html>

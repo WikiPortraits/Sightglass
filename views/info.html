@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{head}}
+    <title data-i18n="info.docTitle">
+      About the Tools - Wikimedia Sightglass
+    </title>
+    <link rel="stylesheet" href="/styles/info.css" />
+  </head>
+
+  <body>
+    {{header}}
+
+    <main class="container info-page">
+      <section class="info-section">
+        <p data-i18n-html="info.intro">
+          Wikimedia Sightglass helps you explore Wikimedia's
+          <a
+            href="https://wikitech.wikimedia.org/wiki/Data_Platform/Data_Lake/Traffic/Mediacounts"
+            target="_blank"
+            >mediacounts</a
+          >
+          dataset, which tracks how often Wikimedia Commons files are loaded.
+          Queries can be run on individual files or category trees. Queries run
+          serverside and the results may be saved by users for later reference
+          and sharing.
+        </p>
+      </section>
+
+      <section class="info-section">
+        <h2 data-i18n="info.backgroundHeading">Background</h2>
+        <p data-i18n="info.background1">
+          Commons contributors often want to know how many views their media
+          receives, and for GLAM institutions it's one of the main ways to
+          measure impact.
+        </p>
+        <p data-i18n="info.background2">
+          The community measures media views in two ways: by the view stats for
+          pages a file appears on and/or by how often the files themselves are
+          loaded. Each approach has trade-offs.
+        </p>
+        <p data-i18n-html="info.background3">
+          For counting article pageviews: Tools like
+          <a
+            href="https://glamtools.toolforge.org/glamorgan.html"
+            target="_blank"
+            >GLAMorgan</a
+          >
+          surface this data, but only for <i>current</i> usage. Once a file is
+          removed from a page, that past usage drops out of later queries. Other
+          tools such as
+          <a
+            href="https://doc.wikimedia.org/generated-data-platform/aqs/analytics-api/reference/commons.html"
+            target="_blank"
+            >Commons Impact Metrics</a
+          >
+          store pageview data over time, but this requires opt-in setup and can
+          still miss short bursts (e.g. a file is added to the Wikipedia front
+          page for a day and receives millions of views).
+        </p>
+
+        <p data-i18n-html="info.background4">
+          For counting media file loads: The Wikimedia Foundation provides
+          <a
+            href="https://wikitech.wikimedia.org/wiki/Data_Platform/Data_Lake/Traffic/Mediacounts"
+            >mediacount stats</a
+          >, which track how often individual files are loaded over time. These
+          counts can be inflated by bots, scrapers, and browser preloading, but
+          they capture historic usage and short-lived bursts, so they can paint
+          a fuller picture for impact analysis.
+        </p>
+
+        <p data-i18n="info.background5">
+          Sightglass was made to help Wikimedia users query and share mediacount
+          stats. Especially when used alongside article usage and pageview data,
+          this helps give a comprehensive picture of media impact.
+        </p>
+      </section>
+
+      <section class="info-section">
+        <h2 data-i18n="info.howHeading">How Mediacount Data Works</h2>
+        <p data-i18n="info.how1">
+          The mediacounts dataset records how often Commons files are
+          transferred to users. Bots, scrapers, and browser prefetching can
+          inflate the numbers; the Wikimedia Foundation filters out much of this
+          traffic, but some still gets through.
+        </p>
+        <p data-i18n-html="info.how2">
+          For more detail, see the
+          <a
+            href="https://wikitech.wikimedia.org/wiki/Data_Platform/Data_Lake/Traffic/Mediacounts"
+            >Wikitech documentation</a
+          >.
+        </p>
+      </section>
+
+      <section class="info-actions">
+        <a
+          href="/"
+          class="button button-secondary"
+          data-i18n="info.backToDashboard"
+          >Back to Dashboard</a
+        >
+      </section>
+    </main>
+
+    {{footer}}
+
+    <script src="/common.js"></script>
+    <script src="/info.js"></script>
+  </body>
+</html>

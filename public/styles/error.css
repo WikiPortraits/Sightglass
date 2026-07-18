@@ -1,0 +1,22 @@
+/* Error page-specific styles */
+
+.error-container {
+  background: var(--card-bg);
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-2xl);
+  text-align: center;
+  max-width: var(--max-width-error);
+  margin: var(--spacing-xl) auto;
+}
+
+.error-container h2 {
+  font-size: var(--font-size-5xl);
+  margin-bottom: var(--spacing-md);
+  color: var(--error-header);
+}
+
+.error-container p {
+  margin-bottom: var(--spacing-lg);
+  color: var(--text-muted);
+}

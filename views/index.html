@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{head}}
+    <title data-i18n="index.docTitle">Wikimedia Sightglass</title>
+    <link rel="stylesheet" href="/styles/index.css" />
+  </head>
+
+  <body data-retention-days="{{retentionDays}}" data-unsave-grace-days="{{unsaveGraceDays}}">
+    {{header}}
+
+    <main class="container">
+      <section class="dashboard-intro">
+        <div class="dashboard-intro-text">
+          <p data-i18n-html="index.intro1">
+            Wikimedia Sightglass helps you query media view counts for files and
+            categories on Wikimedia Commons. See our
+            <a href="/info">info page</a> and the
+            <a
+              href="https://wikitech.wikimedia.org/wiki/Data_Platform/Data_Lake/Traffic/Mediacounts"
+              target="_blank"
+              >mediacounts Wikitech docs</a
+            >
+            for more details.
+          </p>
+          <!-- English is the pre-loaded placeholder -->
+          <p id="dashboard-intro-retention">
+            Your queries for category statistics are listed below for future
+            reference. Query results can be shared with others via a public
+            link. Queries are automatically deleted after 30 days unless saved
+            (anyone can save a query to keep it around).
+          </p>
+        </div>
+        <div
+          id="dashboard-intro-actions"
+          class="dashboard-intro-actions"
+          style="display: none"
+        >
+          <a href="/query" class="button" data-i18n="index.newQueryButton"
+            >+ New Query</a
+          >
+        </div>
+      </section>
+
+      {{login-prompt}}
+
+      <!-- Main content for authenticated users -->
+      <section id="main-content" style="display: none">
+        <section id="dashboard-section">
+          <div class="query-filter-tabs">
+            <button
+              class="filter-tab active"
+              data-filter="all"
+              aria-pressed="true"
+              data-i18n="index.tabYourQueries"
+            >
+              Your Category Queries
+            </button>
+            <button
+              class="filter-tab"
+              data-filter="saved"
+              aria-pressed="false"
+              data-i18n="index.tabSavedQueries"
+            >
+              Saved Category Queries
+            </button>
+          </div>
+
+          <div
+            id="save-scope-filters"
+            class="save-scope-filters"
+            style="display: none"
+          >
+            <button
+              class="save-scope-btn active"
+              data-scope="all"
+              aria-pressed="true"
+              data-i18n="index.scopeAll"
+            >
+              All saved queries
+            </button>
+            <button
+              class="save-scope-btn"
+              data-scope="mine"
+              aria-pressed="false"
+              data-i18n="index.scopeMine"
+            >
+              Saved by you
+            </button>
+            <button
+              class="save-scope-btn"
+              data-scope="others"
+              aria-pressed="false"
+              data-i18n="index.scopeOthers"
+            >
+              Saved by others
+            </button>
+          </div>
+
+          <div class="jobs-visibility-filters">
+            <label class="jobs-toggle-label" for="hide-cancelled-toggle">
+              <input type="checkbox" id="hide-cancelled-toggle" checked />
+              <span data-i18n="index.hideCancelled">Hide cancelled jobs</span>
+            </label>
+          </div>
+
+          <div
+            id="jobs-loading"
+            class="loading-message"
+            style="display: none"
+            data-i18n="index.loadingQueries"
+          >
+            Loading queries…
+          </div>
+
+          <div
+            id="jobs-error"
+            class="error-message"
+            role="alert"
+            style="display: none"
+          ></div>
+
+          <div id="jobs-table-container">
+            <div class="table-scroll">
+              <table id="jobs-table" class="jobs-table-compact">
+                <thead>
+                  <tr>
+                    <th class="col-category sortable" aria-sort="none">
+                      <button
+                        type="button"
+                        class="th-sort"
+                        data-sort-key="category"
+                      >
+                        <span data-i18n="index.colCategory">Category</span
+                        ><span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th class="col-date-range sortable" aria-sort="none">
+                      <button
+                        type="button"
+                        class="th-sort"
+                        data-sort-key="dateRange"
+                      >
+                        <span data-i18n="index.colDateRange">Date Range</span
+                        ><span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th class="col-granularity sortable" aria-sort="none">
+                      <button
+                        type="button"
+                        class="th-sort"
+                        data-sort-key="granularity"
+                      >
+                        <span data-i18n="index.colGranularity">Granularity</span
+                        ><span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th
+                      class="col-depth sortable"
+                      aria-sort="none"
+                      title="Subcategory Depth"
+                      data-i18n-title="index.colDepthTitle"
+                    >
+                      <button
+                        type="button"
+                        class="th-sort"
+                        data-sort-key="depth"
+                      >
+                        <span data-i18n="index.colDepth">Depth</span
+                        ><span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th class="col-created sortable" aria-sort="descending">
+                      <button
+                        type="button"
+                        class="th-sort"
+                        data-sort-key="created"
+                      >
+                        <span data-i18n="index.colCreated">Created</span
+                        ><span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th class="col-status sortable" aria-sort="none">
+                      <button
+                        type="button"
+                        class="th-sort"
+                        data-sort-key="status"
+                      >
+                        <span data-i18n="index.colStatus">Status</span
+                        ><span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th class="col-save sortable" aria-sort="none">
+                      <button
+                        type="button"
+                        class="th-sort"
+                        data-sort-key="saved"
+                        aria-label="Sort by saved"
+                        data-i18n-aria-label="index.sortBySaved"
+                      >
+                        <span aria-hidden="true">★</span
+                        ><span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th class="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody id="jobs-table-body">
+                  <!-- Job rows inserted by JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div
+            id="no-jobs-message"
+            class="no-jobs-message"
+            style="display: none"
+          >
+            <p data-i18n="index.noQueriesYet">
+              You haven't run any queries yet.
+            </p>
+            <p class="no-jobs-action">
+              <a href="/query" class="button" data-i18n="index.getStarted"
+                >Get Started</a
+              >
+            </p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    {{footer}}
+
+    <script src="/common.js"></script>
+    <script src="/slug.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

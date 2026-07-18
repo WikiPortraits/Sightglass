@@ -1,0 +1,478 @@
+const Database = require("better-sqlite3");
+const path = require("path");
+const fs = require("fs");
+const zlib = require("zlib");
+
+const DB_DIR = path.join(__dirname, "..", "data");
+const DB_FILE = path.join(DB_DIR, "jobs.db");
+
+// Unsaved jobs are deleted after this many days
+const JOB_RETENTION_DAYS = Math.max(
+  1,
+  parseInt(process.env.JOB_RETENTION_DAYS, 10) || 30,
+);
+
+// After a job's last save is removed, cleanup waits this many more days
+// so accidental unsaves is recoverable by re-saving
+const JOB_UNSAVE_GRACE_DAYS = Math.max(
+  1,
+  parseInt(process.env.JOB_UNSAVE_GRACE_DAYS, 10) || 7,
+);
+
+if (!fs.existsSync(DB_DIR)) {
+  fs.mkdirSync(DB_DIR, { recursive: true });
+}
+
+const db = new Database(DB_FILE);
+
+// WAL mode for concurrent access
+db.pragma("journal_mode = WAL");
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    owner_id TEXT,
+    username TEXT NOT NULL,
+    parameters TEXT NOT NULL,
+    result TEXT,
+    error TEXT,
+    progress INTEGER DEFAULT 0,
+    total INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER,
+    completed_at INTEGER,
+    unsaved_at INTEGER
+  )
+`);
+
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+  CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
+  CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id);
+`);
+
+// Job saves
+// Multiple users can save a job
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_saves (
+    job_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    saved_at INTEGER NOT NULL,
+    PRIMARY KEY (job_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_job_saves_user ON job_saves(user_id);
+`);
+
+// Per-job payloads
+// keyed: "file:/usage:/node:/nodedirect:<index>"
+db.exec(`
+  CREATE TABLE IF NOT EXISTS job_data (
+    job_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    data TEXT NOT NULL,
+    PRIMARY KEY (job_id, key)
+  )
+`);
+
+const statements = {
+  createJob: db.prepare(`
+    INSERT INTO jobs (id, type, owner_id, username, parameters, status, created_at)
+    VALUES (?, ?, ?, ?, ?, 'pending', ?)
+  `),
+
+  getJob: db.prepare(`
+    SELECT * FROM jobs WHERE id = ?
+  `),
+
+  getJobMeta: db.prepare(`
+    SELECT id, type, status, owner_id, created_at, completed_at FROM jobs WHERE id = ?
+  `),
+
+  getJobInfo: db.prepare(`
+    SELECT id, type, status, owner_id, error, progress, total, created_at, started_at, completed_at, unsaved_at, parameters
+    FROM jobs WHERE id = ?
+  `),
+
+  getJobResult: db.prepare(`
+    SELECT result FROM jobs WHERE id = ?
+  `),
+
+  startJob: db.prepare(`
+    UPDATE jobs
+    SET status = 'running', started_at = ?
+    WHERE id = ? AND status = 'pending'
+  `),
+
+  updateJobProgress: db.prepare(`
+    UPDATE jobs 
+    SET progress = ?, total = ? 
+    WHERE id = ?
+  `),
+
+  completeJob: db.prepare(`
+    UPDATE jobs 
+    SET status = 'completed', result = ?, completed_at = ? 
+    WHERE id = ?
+  `),
+
+  failJob: db.prepare(`
+    UPDATE jobs 
+    SET status = 'failed', error = ?, completed_at = ? 
+    WHERE id = ?
+  `),
+
+  cancelJob: db.prepare(`
+    UPDATE jobs 
+    SET status = 'cancelled', completed_at = ? 
+    WHERE id = ? AND status IN ('pending', 'running')
+  `),
+
+  getUserJobs: db.prepare(`
+    SELECT id, type, status, created_at, started_at, completed_at, unsaved_at, progress, total, parameters,
+      EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?) AS is_saved,
+      EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id != ?) AS is_saved_by_others
+    FROM jobs
+    WHERE owner_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `),
+
+  getAllJobs: db.prepare(`
+    SELECT id, type, status, owner_id, username, created_at, started_at, completed_at, unsaved_at, progress, total, parameters,
+      (SELECT COUNT(*) FROM job_saves s WHERE s.job_id = jobs.id) AS save_count
+    FROM jobs
+    ORDER BY created_at DESC
+    LIMIT ?
+  `),
+
+  getSavedJobsMine: db.prepare(`
+    SELECT id, type, status, created_at, started_at, completed_at, progress, total, parameters,
+      1 AS is_saved,
+      (owner_id = ?) AS is_owner
+    FROM jobs
+    WHERE EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?)
+    ORDER BY created_at DESC
+    LIMIT ?
+  `),
+
+  getSavedJobsAll: db.prepare(`
+    SELECT id, type, status, created_at, started_at, completed_at, progress, total, parameters,
+      EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?) AS is_saved,
+      (owner_id = ?) AS is_owner
+    FROM jobs
+    WHERE EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id)
+    ORDER BY created_at DESC
+    LIMIT ?
+  `),
+
+  getSavedJobsByOthers: db.prepare(`
+    SELECT id, type, status, created_at, started_at, completed_at, progress, total, parameters,
+      EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?) AS is_saved,
+      (owner_id = ?) AS is_owner
+    FROM jobs
+    WHERE EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id != ?)
+    ORDER BY created_at DESC
+    LIMIT ?
+  `),
+
+  saveJob: db.prepare(`
+    INSERT OR IGNORE INTO job_saves (job_id, user_id, saved_at)
+    VALUES (?, ?, ?)
+  `),
+
+  unsaveJob: db.prepare(`
+    DELETE FROM job_saves
+    WHERE job_id = ? AND user_id = ?
+  `),
+
+  clearJobUnsavedAt: db.prepare(`
+    UPDATE jobs SET unsaved_at = NULL WHERE id = ?
+  `),
+
+  markJobUnsaved: db.prepare(`
+    UPDATE jobs SET unsaved_at = ? WHERE id = ?
+  `),
+
+  countJobSaves: db.prepare(`
+    SELECT COUNT(*) AS count FROM job_saves WHERE job_id = ?
+  `),
+
+  isJobSavedBy: db.prepare(`
+    SELECT 1 FROM job_saves WHERE job_id = ? AND user_id = ?
+  `),
+
+  getPendingJobs: db.prepare(`
+    SELECT id, type, status, created_at
+    FROM jobs 
+    WHERE status IN ('pending', 'running')
+    ORDER BY created_at ASC
+  `),
+
+  countUserPendingJobs: db.prepare(`
+    SELECT COUNT(*) as count
+    FROM jobs
+    WHERE owner_id = ? AND status IN ('pending', 'running')
+  `),
+
+  deleteOldJobs: db.prepare(`
+    DELETE FROM jobs
+    WHERE (completed_at < ? OR (status = 'pending' AND created_at < ?))
+      AND NOT EXISTS (SELECT 1 FROM job_saves WHERE job_id = jobs.id)
+      AND (unsaved_at IS NULL OR unsaved_at < ?)
+  `),
+
+  resetStaleRunningJobs: db.prepare(`
+    UPDATE jobs
+    SET status = 'pending', started_at = NULL
+    WHERE status = 'running'
+  `),
+
+  setJobData: db.prepare(`
+    INSERT OR REPLACE INTO job_data (job_id, key, data)
+    VALUES (?, ?, ?)
+  `),
+
+  getJobData: db.prepare(`
+    SELECT data FROM job_data WHERE job_id = ? AND key = ?
+  `),
+
+  deleteOrphanJobData: db.prepare(`
+    DELETE FROM job_data
+    WHERE job_id NOT IN (SELECT id FROM jobs)
+  `),
+
+  deleteOrphanJobSaves: db.prepare(`
+    DELETE FROM job_saves
+    WHERE job_id NOT IN (SELECT id FROM jobs)
+  `),
+};
+
+function createJob(id, type, ownerId, username, parameters) {
+  const now = Date.now();
+  statements.createJob.run(
+    id,
+    type,
+    ownerId,
+    username,
+    JSON.stringify(parameters),
+    now,
+  );
+  return id;
+}
+
+function getJob(id) {
+  const job = statements.getJob.get(id);
+  if (!job) return null;
+
+  return {
+    ...job,
+    parameters: JSON.parse(job.parameters),
+    result: job.result
+      ? JSON.parse(zlib.gunzipSync(job.result).toString())
+      : null,
+  };
+}
+
+// Status/ownership without decompressing the stored result
+function getJobMeta(id) {
+  return statements.getJobMeta.get(id) || null;
+}
+
+// Everything but the result payload
+function getJobInfo(id) {
+  const job = statements.getJobInfo.get(id);
+  if (!job) return null;
+  return { ...job, parameters: JSON.parse(job.parameters) };
+}
+
+// Stored result as-is (gzipped JSON Buffer)
+// null if absent or job missing
+function getJobResultRaw(id) {
+  const row = statements.getJobResult.get(id);
+  return row ? row.result : null;
+}
+
+// Only start pending jobs
+function startJob(id) {
+  const now = Date.now();
+  return statements.startJob.run(now, id).changes > 0;
+}
+
+function updateJobProgress(id, progress, total) {
+  statements.updateJobProgress.run(progress, total, id);
+}
+
+// Results are stored gzipped; getJob unzips on read
+function completeJob(id, result) {
+  const now = Date.now();
+  statements.completeJob.run(zlib.gzipSync(JSON.stringify(result)), now, id);
+}
+
+// Errors carrying an i18n key are stored as JSON {message, key, params}
+// so the results page can translate them; plain strings stay as-is
+function failJob(id, error) {
+  const now = Date.now();
+  const errorMessage = typeof error === "string" ? error : error.message;
+  const stored = error?.i18n
+    ? JSON.stringify({
+        message: errorMessage,
+        key: error.i18n.key,
+        params: error.i18n.params,
+      })
+    : errorMessage;
+  statements.failJob.run(stored, now, id);
+}
+
+function cancelJob(id) {
+  const now = Date.now();
+  const result = statements.cancelJob.run(now, id);
+  return result.changes > 0;
+}
+
+function getUserJobs(ownerId, limit = 50) {
+  const jobs = statements.getUserJobs.all(ownerId, ownerId, ownerId, limit);
+  return jobs.map((job) => ({
+    ...job,
+    parameters: JSON.parse(job.parameters),
+    is_saved: Boolean(job.is_saved),
+    is_saved_by_others: Boolean(job.is_saved_by_others),
+  }));
+}
+
+// Every user's jobs, newest first (admin view)
+function getAllJobs(limit = 200) {
+  return statements.getAllJobs.all(limit).map((job) => ({
+    ...job,
+    parameters: JSON.parse(job.parameters),
+  }));
+}
+
+// scope: all | mine | others
+// is_saved reflects the requesting user's own save
+function getSavedJobsByScope(userId, scope = "all", limit = 50) {
+  let jobs;
+
+  if (scope === "mine") {
+    jobs = statements.getSavedJobsMine.all(userId, userId, limit);
+  } else if (scope === "others") {
+    jobs = statements.getSavedJobsByOthers.all(userId, userId, userId, limit);
+  } else {
+    jobs = statements.getSavedJobsAll.all(userId, userId, limit);
+  }
+
+  return jobs.map((job) => ({
+    ...job,
+    parameters: JSON.parse(job.parameters),
+    is_saved: Boolean(job.is_saved),
+    is_owner: Boolean(job.is_owner),
+  }));
+}
+
+const saveJobTx = db.transaction((id, userId, now) => {
+  statements.saveJob.run(id, userId, now);
+  statements.clearJobUnsavedAt.run(id);
+});
+
+function saveJob(id, userId) {
+  saveJobTx(id, userId, Date.now());
+  return true;
+}
+
+// Removing the last save stamps unsaved_at so cleanup grants a grace period
+const unsaveJobTx = db.transaction((id, userId, now) => {
+  const removed = statements.unsaveJob.run(id, userId).changes > 0;
+  if (removed && statements.countJobSaves.get(id).count === 0) {
+    statements.markJobUnsaved.run(now, id);
+  }
+});
+
+function unsaveJob(id, userId) {
+  unsaveJobTx(id, userId, Date.now());
+  return true;
+}
+
+function countJobSaves(id) {
+  return statements.countJobSaves.get(id).count;
+}
+
+function isJobSavedBy(id, userId) {
+  return Boolean(statements.isJobSavedBy.get(id, userId));
+}
+
+// Restore in-flight jobs on startup
+function getPendingJobs() {
+  return statements.getPendingJobs.all();
+}
+
+function countUserPendingJobs(ownerId) {
+  return statements.countUserPendingJobs.get(ownerId).count;
+}
+
+// Delete jobs older than daysOld unless saved, or recently unsaved (grace period)
+function cleanupOldJobs(daysOld = JOB_RETENTION_DAYS) {
+  const now = Date.now();
+  const cutoffTime = now - daysOld * 24 * 60 * 60 * 1000;
+  const graceCutoff = now - JOB_UNSAVE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+  const result = statements.deleteOldJobs.run(cutoffTime, cutoffTime, graceCutoff);
+  statements.deleteOrphanJobData.run();
+  statements.deleteOrphanJobSaves.run();
+  return result.changes;
+}
+
+const storeJobDetailsTx = db.transaction((jobId, entries) => {
+  for (const entry of entries) {
+    statements.setJobData.run(jobId, entry.key, entry.data);
+  }
+});
+
+// Gzip rows before the transaction takes the write lock
+function storeJobDetails(jobId, entries) {
+  const compressed = entries.map((entry) => ({
+    key: entry.key,
+    data: zlib.gzipSync(entry.data),
+  }));
+  storeJobDetailsTx(jobId, compressed);
+}
+
+// Gzipped JSON Buffer (null if absent)
+function getJobData(jobId, key) {
+  const row = statements.getJobData.get(jobId, key);
+  return row ? row.data : null;
+}
+
+// After server restart, requeue orphaned running jobs
+function resetStaleRunningJobs() {
+  const result = statements.resetStaleRunningJobs.run();
+  return result.changes;
+}
+
+module.exports = {
+  db,
+  JOB_RETENTION_DAYS,
+  JOB_UNSAVE_GRACE_DAYS,
+  createJob,
+  getJob,
+  getJobMeta,
+  getJobInfo,
+  getJobResultRaw,
+  startJob,
+  updateJobProgress,
+  completeJob,
+  failJob,
+  cancelJob,
+  getUserJobs,
+  getAllJobs,
+  getSavedJobsByScope,
+  saveJob,
+  unsaveJob,
+  countJobSaves,
+  isJobSavedBy,
+  getPendingJobs,
+  countUserPendingJobs,
+  cleanupOldJobs,
+  resetStaleRunningJobs,
+  storeJobDetails,
+  getJobData,
+};

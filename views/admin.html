@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{head}}
+    <title data-i18n="admin.docTitle">Admin - Wikimedia Sightglass</title>
+    <link rel="stylesheet" href="/styles/index.css" />
+  </head>
+
+  <body data-retention-days="{{retentionDays}}" data-unsave-grace-days="{{unsaveGraceDays}}">
+    {{header}}
+
+    <main class="container">
+      <section class="dashboard-intro">
+        <div class="dashboard-intro-text">
+          <h2 data-i18n="admin.heading">All Queries</h2>
+          <p data-i18n="admin.intro">
+            Admin view of all category queries from all users.
+          </p>
+        </div>
+      </section>
+
+      <section id="dashboard-section">
+        <div class="admin-toolbar">
+          <input
+            type="search"
+            id="admin-filter-input"
+            class="admin-filter-input"
+            placeholder="Filter by user or category…"
+            data-i18n-placeholder="admin.filterPlaceholder"
+            aria-label="Filter by user or category"
+            data-i18n-aria-label="admin.filterPlaceholder"
+          />
+          <label class="jobs-toggle-label" for="hide-cancelled-toggle">
+            <input type="checkbox" id="hide-cancelled-toggle" checked />
+            <span data-i18n="index.hideCancelled">Hide cancelled jobs</span>
+          </label>
+        </div>
+
+        <div
+          id="jobs-loading"
+          class="loading-message"
+          style="display: none"
+          data-i18n="index.loadingQueries"
+        >
+          Loading queries…
+        </div>
+
+        <div
+          id="jobs-error"
+          class="error-message"
+          role="alert"
+          style="display: none"
+        ></div>
+
+        <p
+          id="admin-jobs-count"
+          class="admin-jobs-count"
+          style="display: none"
+        ></p>
+
+        <div id="jobs-table-container" style="display: none">
+          <div class="table-scroll">
+            <table id="jobs-table" class="jobs-table-compact">
+              <thead>
+                <tr>
+                  <th class="col-category sortable" aria-sort="none">
+                    <button
+                      type="button"
+                      class="th-sort"
+                      data-sort-key="category"
+                    >
+                      <span data-i18n="index.colCategory">Category</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th class="col-user sortable" aria-sort="none">
+                    <button type="button" class="th-sort" data-sort-key="user">
+                      <span data-i18n="admin.colUser">User</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th class="col-date-range sortable" aria-sort="none">
+                    <button
+                      type="button"
+                      class="th-sort"
+                      data-sort-key="dateRange"
+                    >
+                      <span data-i18n="index.colDateRange">Date Range</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th class="col-granularity sortable" aria-sort="none">
+                    <button
+                      type="button"
+                      class="th-sort"
+                      data-sort-key="granularity"
+                    >
+                      <span data-i18n="index.colGranularity">Granularity</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th
+                    class="col-depth sortable"
+                    aria-sort="none"
+                    title="Subcategory Depth"
+                    data-i18n-title="index.colDepthTitle"
+                  >
+                    <button type="button" class="th-sort" data-sort-key="depth">
+                      <span data-i18n="index.colDepth">Depth</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th class="col-created sortable" aria-sort="descending">
+                    <button
+                      type="button"
+                      class="th-sort"
+                      data-sort-key="created"
+                    >
+                      <span data-i18n="index.colCreated">Created</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th class="col-status sortable" aria-sort="none">
+                    <button
+                      type="button"
+                      class="th-sort"
+                      data-sort-key="status"
+                    >
+                      <span data-i18n="index.colStatus">Status</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th
+                    class="col-save sortable"
+                    aria-sort="none"
+                    title="Saves"
+                    data-i18n-title="admin.colSavesTitle"
+                  >
+                    <button
+                      type="button"
+                      class="th-sort"
+                      data-sort-key="saves"
+                      aria-label="Sort by saves"
+                      data-i18n-aria-label="admin.sortBySaves"
+                    >
+                      <span aria-hidden="true">★</span
+                      ><span class="sort-indicator" aria-hidden="true"></span>
+                    </button>
+                  </th>
+                  <th class="col-actions"></th>
+                </tr>
+              </thead>
+              <tbody id="jobs-table-body">
+                <!-- Job rows inserted by JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div
+          id="no-jobs-message"
+          class="no-jobs-message"
+          style="display: none"
+        >
+          <p data-i18n="admin.noJobs">No queries found.</p>
+        </div>
+      </section>
+    </main>
+
+    {{footer}}
+
+    <script src="/common.js"></script>
+    <script src="/slug.js"></script>
+    <script src="/admin.js"></script>
+  </body>
+</html>

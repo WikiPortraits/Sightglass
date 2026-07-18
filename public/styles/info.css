@@ -1,0 +1,25 @@
+/* Info page */
+
+.info-page {
+  display: flex;
+  flex-direction: column;
+  max-width: var(--max-width-prose);
+}
+
+.info-section h2 {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: var(--font-size-3xl);
+  color: var(--text-color);
+}
+
+.info-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .info-actions .button {
+    width: 100%;
+  }
+}

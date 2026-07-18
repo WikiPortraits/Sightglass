@@ -1,0 +1,33 @@
+{
+  "name": "wikimedia-sightglass",
+  "version": "1.0.0",
+  "description": "View statistics for Wikimedia Commons media files and categories",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "postinstall": "mkdir -p public/vendor && cp node_modules/chart.js/dist/chart.umd.js public/vendor/chart.js"
+  },
+  "keywords": [
+    "wikimedia",
+    "commons",
+    "media",
+    "statistics",
+    "analytics"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.11.1",
+    "better-sqlite3-session-store": "^0.1.0",
+    "chart.js": "^4.5.1",
+    "compression": "^1.8.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.0",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "oauth-1.0a": "^2.2.6"
+  }
+}

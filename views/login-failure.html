@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{head}}
+    <title data-i18n="loginFailed.docTitle">Login Failed</title>
+    <link rel="stylesheet" href="/styles/error.css" />
+  </head>
+  <body>
+    {{header}}
+    <main class="container">
+      <div class="error-container">
+        <h2 data-i18n="loginFailed.heading">Login Failed</h2>
+        <p>{{message}}</p>
+        <a href="/" class="button" data-i18n="common.returnHome">Return Home</a>
+      </div>
+    </main>
+    {{footer}}
+    <script src="/common.js"></script>
+    <script src="/info.js"></script>
+  </body>
+</html>

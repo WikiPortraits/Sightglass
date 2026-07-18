@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{head}}
+    <title data-i18n="query.docTitle">New Query - Wikimedia Sightglass</title>
+    <link rel="stylesheet" href="/styles/query.css" />
+  </head>
+
+  <body>
+    {{header}}
+
+    <main class="container">
+      {{login-prompt}}
+
+      <!-- Main content for authenticated users -->
+      <section id="main-content" style="display: none">
+        <div class="section-header">
+          <h2 data-i18n="query.heading">New Query</h2>
+          <div class="section-header-actions">
+            <a
+              href="/"
+              class="button button-secondary"
+              data-i18n="query.backToDashboard"
+              >← Back to Dashboard</a
+            >
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button
+            class="tab-button active"
+            data-tab="file"
+            aria-pressed="true"
+            data-i18n="query.tabFile"
+          >
+            Individual File
+          </button>
+          <button
+            class="tab-button"
+            data-tab="category"
+            aria-pressed="false"
+            data-i18n="query.tabCategory"
+          >
+            Category Analysis
+          </button>
+        </div>
+
+        <!-- File Analysis Tab -->
+        <section id="file-tab" class="tab-content active">
+          <section class="search-section">
+            <p class="subtitle" data-i18n="query.fileSubtitle">
+              Enter a filename from Wikimedia Commons to see its view statistics
+              over time.
+            </p>
+
+            <div class="search-form">
+              <div class="form-section">
+                <div class="input-group">
+                  <label for="filename-input" data-i18n="query.filenameLabel"
+                    >Filename:</label
+                  >
+                  <input
+                    type="text"
+                    id="filename-input"
+                    placeholder="Search Commons, e.g. Mona_Lisa.jpg"
+                    data-i18n-placeholder="query.filenamePlaceholder"
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-controls="search-suggestions"
+                    aria-expanded="false"
+                  />
+                  <div
+                    id="search-suggestions"
+                    class="search-suggestions"
+                    role="listbox"
+                    aria-label="Filename suggestions"
+                    data-i18n-aria-label="query.filenameSuggestionsAria"
+                  ></div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <h3 class="form-section-title" data-i18n="query.timeSection">
+                  Time
+                </h3>
+                <div class="options-group">
+                  <div class="input-group">
+                    <label for="granularity" data-i18n="query.granularityLabel"
+                      >Granularity:</label
+                    >
+                    <select id="granularity">
+                      <option value="daily" data-i18n="granularity.daily">
+                        Daily
+                      </option>
+                      <option value="monthly" data-i18n="granularity.monthly">
+                        Monthly
+                      </option>
+                    </select>
+                  </div>
+
+                  <div class="input-group">
+                    <label for="start-date" data-i18n="query.startDateLabel"
+                      >Start Date:</label
+                    >
+                    <input type="date" id="start-date" />
+                  </div>
+
+                  <div class="input-group">
+                    <label for="end-date" data-i18n="query.endDateLabel"
+                      >End Date:</label
+                    >
+                    <input type="date" id="end-date" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <h3
+                  class="form-section-title"
+                  data-i18n="query.metadataSection"
+                >
+                  Metadata Filters
+                </h3>
+                <div class="options-group">
+                  <div class="input-group">
+                    <label for="referer" data-i18n="query.refererLabel"
+                      >Referer:</label
+                    >
+                    <select id="referer">
+                      <option value="all-referers" data-i18n="query.refererAll">
+                        All Referers
+                      </option>
+                      <option
+                        value="internal"
+                        data-i18n="query.refererInternal"
+                      >
+                        Internal
+                      </option>
+                      <option
+                        value="external"
+                        data-i18n="query.refererExternal"
+                      >
+                        External
+                      </option>
+                      <option
+                        value="search-engine"
+                        data-i18n="query.refererSearchEngine"
+                      >
+                        Search Engine
+                      </option>
+                      <option value="unknown" data-i18n="query.refererUnknown">
+                        Unknown
+                      </option>
+                      <option value="none" data-i18n="query.refererNone">
+                        None
+                      </option>
+                      <option value="custom" data-i18n="query.refererCustom">
+                        Custom Domain...
+                      </option>
+                    </select>
+                  </div>
+
+                  <div
+                    class="input-group"
+                    id="custom-referer-group"
+                    style="display: none"
+                  >
+                    <label for="custom-referer" data-i18n="query.domainLabel"
+                      >Domain:</label
+                    >
+                    <input
+                      type="text"
+                      id="custom-referer"
+                      placeholder="en.wikipedia.org"
+                      data-i18n-placeholder="query.domainPlaceholder"
+                    />
+                  </div>
+
+                  <div class="input-group">
+                    <label for="agent" data-i18n="query.agentLabel"
+                      >Agent Type:</label
+                    >
+                    <select id="agent">
+                      <option value="all-agents" data-i18n="query.agentAll">
+                        All Agents
+                      </option>
+                      <option value="user" selected data-i18n="query.agentUser">
+                        User
+                      </option>
+                      <option value="spider" data-i18n="query.agentSpider">
+                        Spider
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button
+                  id="search-btn"
+                  class="button"
+                  data-i18n="query.getStatistics"
+                >
+                  Get Statistics
+                </button>
+              </div>
+            </div>
+
+            <div
+              id="error"
+              class="error-message"
+              role="alert"
+              style="display: none"
+            ></div>
+          </section>
+
+          <section
+            id="results-section"
+            class="results-section"
+            style="display: none"
+          >
+            <h3>
+              <span data-i18n="query.statisticsFor">Statistics for</span>
+              <span id="result-filename"></span>
+            </h3>
+
+            <div class="stats-summary">
+              <div class="stat-card">
+                <h4 data-i18n="query.totalViews">Total Views</h4>
+                <p id="total-views" class="stat-value">-</p>
+              </div>
+              <div class="stat-card">
+                <h4 data-i18n="query.avgViewsDay">Average Views/Day</h4>
+                <p id="avg-views" class="stat-value">-</p>
+              </div>
+              <div class="stat-card">
+                <h4 data-i18n="query.peakViews">Peak Views</h4>
+                <p id="peak-views" class="stat-value">-</p>
+              </div>
+              <div class="stat-card">
+                <h4 data-i18n="query.dataPoints">Data Points</h4>
+                <p id="data-points" class="stat-value">-</p>
+              </div>
+            </div>
+
+            <div class="chart-container">
+              <h4 data-i18n="query.viewsOverTime">Views Over Time</h4>
+              <canvas
+                id="views-chart"
+                role="img"
+                aria-label="Line chart of views over time"
+                data-i18n-aria-label="query.chartAria"
+              ></canvas>
+            </div>
+
+            <div class="data-table-container">
+              <div class="table-header">
+                <h4 data-i18n="query.detailedData">Detailed Data</h4>
+                <button
+                  id="download-csv"
+                  class="button button-small button-secondary"
+                  data-i18n="query.downloadCsv"
+                >
+                  Download CSV
+                </button>
+              </div>
+              <div class="table-scroll">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="query.colDate">Date</th>
+                      <th data-i18n="query.colTotalViews">Total Views</th>
+                    </tr>
+                  </thead>
+                  <tbody id="data-table-body"></tbody>
+                </table>
+              </div>
+              <div
+                id="data-table-show-more"
+                class="show-more-container"
+                style="display: none"
+              >
+                <button
+                  id="data-table-show-more-btn"
+                  class="button button-secondary"
+                  data-i18n="query.showMore"
+                >
+                  Show More
+                </button>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button
+                id="view-on-commons"
+                class="button button-secondary"
+                data-i18n="query.viewOnCommons"
+              >
+                View on Commons
+              </button>
+            </div>
+          </section>
+        </section>
+
+        <!-- Category Analysis Tab -->
+        <section id="category-tab" class="tab-content">
+          <section class="search-section">
+            <p class="subtitle" data-i18n="query.categorySubtitle">
+              Analyze all media files in a Commons category. Get aggregate
+              statistics and per-file breakdown.
+            </p>
+
+            <div class="search-form">
+              <div class="form-section">
+                <div class="options-group">
+                  <div class="input-group">
+                    <label for="category-input" data-i18n="query.categoryLabel"
+                      >Category name:</label
+                    >
+                    <input
+                      type="text"
+                      id="category-input"
+                      placeholder="Search categories, e.g. Wikipedia 25 mascot"
+                      data-i18n-placeholder="query.categoryPlaceholder"
+                      autocomplete="off"
+                      role="combobox"
+                      aria-autocomplete="list"
+                      aria-controls="category-suggestions"
+                      aria-expanded="false"
+                    />
+                    <div
+                      id="category-suggestions"
+                      class="search-suggestions"
+                      role="listbox"
+                      aria-label="Category suggestions"
+                      data-i18n-aria-label="query.categorySuggestionsAria"
+                    ></div>
+                  </div>
+
+                  <div class="input-group">
+                    <label for="category-depth" data-i18n="query.depthLabel"
+                      >Depth (subcategories):</label
+                    >
+                    <select id="category-depth">
+                      <option value="0" data-i18n="query.depthCurrentOnly">
+                        0 (current only)
+                      </option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                      <option value="6">6</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <h3 class="form-section-title" data-i18n="query.timeSection">
+                  Time
+                </h3>
+                <div class="options-group">
+                  <div class="input-group">
+                    <label
+                      for="category-granularity"
+                      data-i18n="query.granularityLabel"
+                      >Granularity:</label
+                    >
+                    <select id="category-granularity">
+                      <option value="daily" data-i18n="granularity.daily">
+                        Daily
+                      </option>
+                      <option value="monthly" data-i18n="granularity.monthly">
+                        Monthly
+                      </option>
+                    </select>
+                  </div>
+
+                  <div class="input-group">
+                    <label
+                      for="category-start-date"
+                      data-i18n="query.startDateLabel"
+                      >Start Date:</label
+                    >
+                    <input type="date" id="category-start-date" />
+                  </div>
+
+                  <div class="input-group">
+                    <label
+                      for="category-end-date"
+                      data-i18n="query.endDateLabel"
+                      >End Date:</label
+                    >
+                    <input type="date" id="category-end-date" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-section">
+                <h3
+                  class="form-section-title"
+                  data-i18n="query.metadataSection"
+                >
+                  Metadata Filters
+                </h3>
+                <div class="options-group">
+                  <div class="input-group">
+                    <label for="category-referer" data-i18n="query.refererLabel"
+                      >Referer:</label
+                    >
+                    <select id="category-referer">
+                      <option value="all-referers" data-i18n="query.refererAll">
+                        All Referers
+                      </option>
+                      <option
+                        value="internal"
+                        data-i18n="query.refererInternal"
+                      >
+                        Internal
+                      </option>
+                      <option
+                        value="external"
+                        data-i18n="query.refererExternal"
+                      >
+                        External
+                      </option>
+                      <option
+                        value="search-engine"
+                        data-i18n="query.refererSearchEngine"
+                      >
+                        Search Engine
+                      </option>
+                      <option value="unknown" data-i18n="query.refererUnknown">
+                        Unknown
+                      </option>
+                      <option value="none" data-i18n="query.refererNone">
+                        None
+                      </option>
+                      <option value="custom" data-i18n="query.refererCustom">
+                        Custom Domain...
+                      </option>
+                    </select>
+                  </div>
+
+                  <div
+                    class="input-group"
+                    id="category-custom-referer-group"
+                    style="display: none"
+                  >
+                    <label
+                      for="category-custom-referer"
+                      data-i18n="query.domainLabel"
+                      >Domain:</label
+                    >
+                    <input
+                      type="text"
+                      id="category-custom-referer"
+                      placeholder="en.wikipedia.org"
+                      data-i18n-placeholder="query.domainPlaceholder"
+                    />
+                  </div>
+
+                  <div class="input-group">
+                    <label for="category-agent" data-i18n="query.agentLabel"
+                      >Agent Type:</label
+                    >
+                    <select id="category-agent">
+                      <option value="all-agents" data-i18n="query.agentAll">
+                        All Agents
+                      </option>
+                      <option value="user" selected data-i18n="query.agentUser">
+                        User
+                      </option>
+                      <option value="spider" data-i18n="query.agentSpider">
+                        Spider
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button
+                  id="category-search-btn"
+                  class="button"
+                  data-i18n="query.getStatistics"
+                >
+                  Get Statistics
+                </button>
+              </div>
+            </div>
+
+            <div
+              id="category-error"
+              class="error-message"
+              role="alert"
+              style="display: none"
+            ></div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    {{footer}}
+
+    <script src="/vendor/chart.js"></script>
+    <script src="/common.js"></script>
+    <script src="/slug.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
