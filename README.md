@@ -81,7 +81,7 @@ JSON body fields:
 - `start` (optional) - Start date in YYYYMMDD format
 - `end` (optional) - End date in YYYYMMDD format
 - `granularity` (optional) - `daily` or `monthly` (default: daily)
-- `depth` (optional) - Subcategory depth 0-6 (default: 0)
+- `depth` (optional) - Subcategory depth 0-10 (default: 0)
 - `referer` (optional) - Referer filter
 - `agent` (optional) - Agent type filter
 
@@ -135,7 +135,7 @@ GET /api/category/files
 Parameters:
 
 - `category` (required) - Category name
-- `depth` (optional) - Subcategory depth 0-6 (default: 0)
+- `depth` (optional) - Subcategory depth 0-10 (default: 0)
 
 ### Session Status
 

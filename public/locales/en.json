@@ -156,7 +156,7 @@
   "api.filenameRequired": "Filename is required",
   "api.searchQueryRequired": "Search query is required",
   "api.categoryRequired": "Category name is required",
-  "api.invalidDepth": "Depth must be between 0 and 6",
+  "api.invalidDepth": "Depth must be between 0 and 10",
   "api.invalidStartDate": "Start date must be in YYYYMMDD format",
   "api.invalidEndDate": "End date must be in YYYYMMDD format",
   "api.invalidGranularity": "Granularity must be 'daily' or 'monthly'",

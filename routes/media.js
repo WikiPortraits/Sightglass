@@ -212,7 +212,7 @@ router.get("/api/media/search", requireAuth, apiLimiter, async (req, res) => {
 
 /**
  * All files in a category, fetched with pagination
- * GET /api/category/files?category=CATEGORY_NAME&depth=0-6
+ * GET /api/category/files?category=CATEGORY_NAME&depth=0-10
  */
 // Interactive crawls get far tighter caps than background jobs, and stop
 // wasting the shared Wikimedia request budget when the client disconnects
@@ -237,10 +237,10 @@ router.get("/api/category/files", requireAuth, apiLimiter, async (req, res) => {
     }
 
     const categoryDepth = parseInt(depth, 10);
-    if (isNaN(categoryDepth) || categoryDepth < 0 || categoryDepth > 6) {
+    if (isNaN(categoryDepth) || categoryDepth < 0 || categoryDepth > 10) {
       return res.status(400).json({
         error: "Invalid depth",
-        message: "Depth must be between 0 and 6",
+        message: "Depth must be between 0 and 10",
         messageKey: "api.invalidDepth",
       });
     }
@@ -329,10 +329,10 @@ router.post(
       }
 
       const categoryDepth = parseInt(depth, 10);
-      if (isNaN(categoryDepth) || categoryDepth < 0 || categoryDepth > 6) {
+      if (isNaN(categoryDepth) || categoryDepth < 0 || categoryDepth > 10) {
         return res.status(400).json({
           error: "Invalid depth",
-          message: "Depth must be between 0 and 6",
+          message: "Depth must be between 0 and 10",
           messageKey: "api.invalidDepth",
         });
       }
