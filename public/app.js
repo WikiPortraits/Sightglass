@@ -119,18 +119,38 @@ async function loadJobHistory() {
   if (jobsError) jobsError.style.display = "none";
   if (jobsTableBody) jobsTableBody.innerHTML = "";
   if (noJobsMessage) noJobsMessage.style.display = "none";
+  const staleNote = document.getElementById("jobs-truncation-note");
+  if (staleNote) staleNote.style.display = "none";
   if (jobsTableContainer) jobsTableContainer.style.display = "none";
   if (jobsLoading) jobsLoading.style.display = "block";
 
   try {
     const endpoint =
-      currentQueryFilter === "saved" ? "/api/jobs/saved" : "/api/jobs";
+      currentQueryFilter === "saved"
+        ? "/api/jobs/saved?limit=100"
+        : "/api/jobs?limit=100";
     const response = await fetch(endpoint);
     if (!response.ok) {
       throw new Error("Failed to load jobs");
     }
 
     const jobs = await response.json();
+
+    // Note when the 100-row cap truncated the list
+    const totalCount = Number(response.headers.get("X-Total-Count"));
+    const truncationNote = document.getElementById("jobs-truncation-note");
+    if (truncationNote) {
+      const truncated = Number.isFinite(totalCount) && totalCount > jobs.length;
+      if (truncated) {
+        truncationNote.textContent = t(
+          "index.showingRecent",
+          jobs.length,
+          totalCount,
+        );
+      }
+      truncationNote.style.display = truncated ? "block" : "none";
+    }
+
     const hasAnyJobs = jobs.length > 0;
     const visibleJobs = hideCancelledJobs
       ? jobs.filter((job) => job.status !== "cancelled")
@@ -1011,6 +1031,15 @@ function displayResults(data) {
     showError(t("query.errorNoData"));
     return;
   }
+
+  // AQS omits zero-request periods; fill them so the average, chart,
+  // and CSV cover the full range
+  data.items = MediaViewCommon.zeroFillTimeline(
+    data.items,
+    data.metadata.startDate,
+    data.metadata.endDate,
+    data.metadata.granularity,
+  );
 
   const resultsSection = document.getElementById("results-section");
   resultsSection.style.display = "block";

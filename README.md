@@ -113,7 +113,10 @@ GET /api/jobs
 
 Parameters:
 
-- `limit` (optional) - Number of jobs to return (default: 50)
+- `limit` (optional) - Number of jobs to return (default: 50, max: 100)
+
+The response includes an `X-Total-Count` header with the user's total job
+count, so clients can tell when the list is truncated.
 
 ### Search Commons Files
 

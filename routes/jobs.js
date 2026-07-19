@@ -10,6 +10,9 @@ const {
   getUserJobs,
   getAllJobs,
   getSavedJobsForUser,
+  countUserJobs,
+  countAllJobs,
+  countSavedJobsForUser,
   saveJob,
   unsaveJob,
   countJobSaves,
@@ -108,6 +111,8 @@ router.get("/api/jobs", requireAuth, apiLimiter, async (req, res) => {
       Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100),
     );
 
+    // So the client can show "N of M" when truncated
+    res.set("X-Total-Count", String(countUserJobs(ownerId)));
     res.json(
       jobs.map((job) => ({
         ...job,
@@ -141,6 +146,7 @@ router.get(
         Math.min(Math.max(parseInt(limit, 10) || 200, 1), 500),
       );
 
+      res.set("X-Total-Count", String(countAllJobs()));
       res.json(
         jobs.map((job) => ({
           ...job,
@@ -170,6 +176,7 @@ router.get("/api/jobs/saved", requireAuth, apiLimiter, async (req, res) => {
       userId,
       Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100),
     );
+    res.set("X-Total-Count", String(countSavedJobsForUser(userId)));
     res.json(
       jobs.map((job) => ({
         ...job,

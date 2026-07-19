@@ -22,7 +22,9 @@ let renderedFileCount = 0;
 let fileListScrollHandlerAttached = false;
 const detailCharts = new Map();
 
-// Drill-in state: id -> node lookup and the scoping node (null = whole category)
+// Drill-in state: normalized subcategory graph, occurrence view-models
+// by id, and the scoped occurrence (null = whole category)
+let treeGraph = [];
 let treeNodesById = [];
 let treeRoot = null;
 let scopedNode = null;
@@ -38,6 +40,17 @@ let scopeChartToken = 0;
 // Turn [timestamp, requests] pairs into objects
 function expandTimeline(pairs) {
   return pairs.map(([timestamp, requests]) => ({ timestamp, requests }));
+}
+
+// Fill the job's full date range with zero-request periods (AQS omits them)
+function filledTimeline(timeline) {
+  if (!currentResult) return timeline;
+  return MediaViewCommon.zeroFillTimeline(
+    timeline,
+    currentResult.startDate,
+    currentResult.endDate,
+    currentResult.granularity,
+  );
 }
 
 function fetchFileItems(file) {
@@ -750,16 +763,17 @@ function renderScopedView(result) {
     fetchNodeTimeline(scopedNode)
       .then((timeline) => {
         if (token !== scopeChartToken) return;
-        updateScopedChart(timeline, result.granularity);
+        updateScopedChart(filledTimeline(timeline), result.granularity);
       })
       .catch((error) => {
         console.error("Failed to load subcategory timeline:", error);
         if (token === scopeChartToken) {
+          // Unfilled so the chart hides rather than drawing a false flat zero
           updateScopedChart([], result.granularity);
         }
       });
   } else {
-    updateScopedChart(result.timeline, result.granularity);
+    updateScopedChart(filledTimeline(result.timeline), result.granularity);
   }
 
   const heading = document.getElementById("file-list-heading");
@@ -806,46 +820,81 @@ function formatShare(fraction) {
   return percent >= 10 ? `${Math.round(percent)}%` : `${percent.toFixed(1)}%`;
 }
 
-// Build tree rows with parent links, depths, and stable ids
-// Categories with both files and subcats get an extra "files directly in X" row
-function buildTreeViewModel(node, parent) {
+// Current jobs store the subcategory graph as a flat array with children
+// as indices; older jobs stored a nested tree. Normalize both to nodes
+// with childIds and the stored timeline nodeIndex.
+function normalizeCategoryTree(tree) {
+  if (Array.isArray(tree)) {
+    return tree.map((node, index) => ({
+      ...node,
+      childIds: node.children,
+      nodeIndex: index,
+    }));
+  }
+  const nodes = [];
+  (function walk(node) {
+    const flat = { ...node, childIds: [] };
+    nodes.push(flat);
+    for (const child of node.children) {
+      flat.childIds.push(nodes.length);
+      walk(child);
+    }
+  })(tree);
+  return nodes;
+}
+
+// One view-model per place a category appears, created lazily; stats
+// come from the shared graph node
+function makeVm(node, parent, isDirect) {
   const vm = {
     id: treeNodesById.length,
+    node,
+    parent,
+    isDirect,
     name: node.name,
     nodeIndex: node.nodeIndex,
-    isDirect: false,
     depth: parent ? parent.depth + 1 : -1,
     fileIndexes: node.fileIndexes,
     directViews: node.directViews,
-    subtreeViews: node.subtreeViews,
-    subtreeFileCount: node.subtreeFileCount,
-    parent,
-    children: [],
+    subtreeViews: isDirect ? node.directViews : node.subtreeViews,
+    subtreeFileCount: isDirect
+      ? node.fileIndexes.length
+      : node.subtreeFileCount,
+    children: null, // built on first expand
   };
   treeNodesById.push(vm);
-
-  const children = node.children;
-  if (children.length > 0 && vm.fileIndexes.length > 0) {
-    const directRow = {
-      id: treeNodesById.length,
-      name: node.name,
-      nodeIndex: node.nodeIndex,
-      isDirect: true,
-      depth: vm.depth + 1,
-      fileIndexes: vm.fileIndexes,
-      directViews: vm.directViews,
-      subtreeViews: vm.directViews,
-      subtreeFileCount: vm.fileIndexes.length,
-      parent: vm,
-      children: [],
-    };
-    treeNodesById.push(directRow);
-    vm.children.push(directRow);
-  }
-  children.forEach((child) => {
-    vm.children.push(buildTreeViewModel(child, vm));
-  });
   return vm;
+}
+
+function vmHasChildren(vm) {
+  return !vm.isDirect && vm.node.childIds.length > 0;
+}
+
+// Category graphs can contain cycles; cut them per ancestor path
+function pathIncludesNode(vm, node) {
+  for (let cur = vm; cur; cur = cur.parent) {
+    if (!cur.isDirect && cur.node === node) return true;
+  }
+  return false;
+}
+
+// Categories with both files and subcats get an extra "files directly in X" row
+function vmChildren(vm) {
+  if (vm.children) return vm.children;
+  vm.children = [];
+  if (vm.isDirect) return vm.children;
+
+  const node = vm.node;
+  if (node.childIds.length > 0 && node.fileIndexes.length > 0) {
+    vm.children.push(makeVm(node, vm, true));
+  }
+  for (const childId of node.childIds) {
+    const child = treeGraph[childId];
+    if (!pathIncludesNode(vm, child)) {
+      vm.children.push(makeVm(child, vm, false));
+    }
+  }
+  return vm.children;
 }
 
 function setupCategoryTree(result) {
@@ -855,17 +904,17 @@ function setupCategoryTree(result) {
 
   treeNodesById = [];
   treeRoot = null;
+  treeGraph = normalizeCategoryTree(result.categoryTree);
 
   // No subcategories (e.g. depth-0 query): nothing to drill into
-  const tree = result.categoryTree;
-  if (tree.children.length === 0) {
+  if (treeGraph[0].childIds.length === 0) {
     section.style.display = "none";
     container.innerHTML = "";
     return;
   }
 
-  treeRoot = buildTreeViewModel(tree, null);
-  container.innerHTML = `<ul class="tree-level">${treeRoot.children
+  treeRoot = makeVm(treeGraph[0], null, false);
+  container.innerHTML = `<ul class="tree-level">${vmChildren(treeRoot)
     .map((child) => renderTreeNode(child))
     .join("")}</ul>`;
   section.style.display = "block";
@@ -889,7 +938,7 @@ function renderTreeNode(node) {
   const displayName = node.isDirect
     ? t("results.filesDirectlyIn", stripCategoryPrefix(node.name))
     : stripCategoryPrefix(node.name);
-  const hasChildren = node.children.length > 0;
+  const hasChildren = vmHasChildren(node);
   const share =
     treeRoot && treeRoot.subtreeViews > 0
       ? node.subtreeViews / treeRoot.subtreeViews
@@ -969,7 +1018,7 @@ function toggleTreeNodeExpansion(item) {
   if (expand && !group) {
     group = document.createElement("ul");
     group.className = "tree-level";
-    group.innerHTML = node.children
+    group.innerHTML = vmChildren(node)
       .map((child) => renderTreeNode(child))
       .join("");
     item.appendChild(group);
@@ -995,7 +1044,7 @@ function setScope(node) {
   }
 
   // Expand the scoped branch so the row and its children are visible
-  if (scopedNode && scopedNode.children.length > 0) {
+  if (scopedNode && vmHasChildren(scopedNode)) {
     const item = document.querySelector(
       `.tree-node[data-node-id="${scopedNode.id}"]`,
     );
@@ -1079,14 +1128,20 @@ function renderScopeBar() {
   bar.style.display = "flex";
 }
 
-function collectSubtreeIndexes(node, indexes) {
-  node.fileIndexes.forEach((index) => indexes.add(index));
-  node.children.forEach((child) => {
-    // Direct-files rows repeat their parent's files; skip
-    if (!child.isDirect) {
-      collectSubtreeIndexes(child, indexes);
-    }
-  });
+function collectSubtreeIndexes(vm, indexes) {
+  // Direct-files rows cover only their category's own files
+  if (vm.isDirect) {
+    vm.fileIndexes.forEach((index) => indexes.add(index));
+    return indexes;
+  }
+  // Walk the graph so shared subcategories and cycles count files once
+  const visited = new Set();
+  (function walk(node) {
+    if (visited.has(node)) return;
+    visited.add(node);
+    node.fileIndexes.forEach((index) => indexes.add(index));
+    node.childIds.forEach((childId) => walk(treeGraph[childId]));
+  })(vm.node);
   return indexes;
 }
 
@@ -1422,6 +1477,12 @@ function fileCreditHtml(file) {
   return `<div class="file-item-attribution" title="${escapeHtml(plain)}">${escapeHtml(plain)}</div>`;
 }
 
+// "500+" when the usage list hit its cap
+function usageCountText(file) {
+  const count = Number(file.usage).toLocaleString();
+  return file.usageTruncated ? `${count}+` : count;
+}
+
 // Per-file share denominator: the same total the stat cards show
 function scopeTotalViews() {
   if (scopedNode) return Number(scopedNode.subtreeViews) || 0;
@@ -1469,7 +1530,7 @@ function appendNextFilePage() {
           <div class="file-item-info">
           <a class="file-item-link" href="https://commons.wikimedia.org/wiki/File:${encodeURIComponent(file.filename)}" target="_blank" rel="noopener noreferrer">${escapeHtml(file.filename)}</a>
           ${fileCreditHtml(file)}
-          ${file.usage ? `<div class="file-item-usage">${escapeHtml(t("results.usedOnPages", file.usage.toLocaleString(), file.usage))}</div>` : ""}
+          ${file.usage ? `<div class="file-item-usage">${escapeHtml(t("results.usedOnPages", usageCountText(file), file.usage))}</div>` : ""}
           ${file.error ? `<br><span class="file-item-error">${escapeHtml(t("results.fileError", file.error))}</span>` : ""}
           </div>
         </div>
@@ -1576,6 +1637,9 @@ function renderFileDetailContent(details, file, fileIndex, items) {
     return;
   }
 
+  // Zero-fill so the average divides by the full range, not days with views
+  items = filledTimeline(items);
+
   const granularity = currentResult ? currentResult.granularity : "daily";
   const isMonthly = granularity === "monthly";
   const fileTotal = Number(file.totalViews) || 0;
@@ -1651,7 +1715,7 @@ function renderFileDetailContent(details, file, fileIndex, items) {
         .join("")}
     </div>
     ${showChart ? `<div class="file-detail-chart"><canvas role="img" aria-label="${escapeHtml(t("results.chartAriaFile", file.filename))}"></canvas></div>` : ""}
-    ${file.usage ? `<div class="file-detail-usage"><h4 class="file-detail-usage-heading">${escapeHtml(t("results.usedOnPages", file.usage.toLocaleString(), file.usage))}</h4><div class="file-usage-list">${escapeHtml(t("results.loadingPageList"))}</div></div>` : ""}
+    ${file.usage ? `<div class="file-detail-usage"><h4 class="file-detail-usage-heading">${escapeHtml(t("results.usedOnPages", usageCountText(file), file.usage))}</h4><div class="file-usage-list">${escapeHtml(t("results.loadingPageList"))}</div></div>` : ""}
   `;
 
   const canvas = showChart ? details.querySelector("canvas") : null;
@@ -2122,9 +2186,9 @@ function downloadCategoryWorkbook() {
     new Date().toLocaleString(MediaViewI18n.locale()),
   ]);
 
-  const timeline = Array.isArray(currentResult.timeline)
-    ? currentResult.timeline
-    : [];
+  const timeline = filledTimeline(
+    Array.isArray(currentResult.timeline) ? currentResult.timeline : [],
+  );
   const timelineRows = [[periodHeader, t("export.colTotalViews")]];
   timeline.forEach((item) =>
     timelineRows.push([
@@ -2166,7 +2230,7 @@ function downloadCategoryWorkbook() {
   ];
 
   // Skip when the query found no subcategories
-  if (currentResult.categoryTree.children.length > 0) {
+  if (treeGraph.length > 0 && treeGraph[0].childIds.length > 0) {
     const subcategoryRows = [
       [
         t("export.colCategory"),
@@ -2175,16 +2239,25 @@ function downloadCategoryWorkbook() {
         t("export.colViewsDirect"),
       ],
     ];
-    const addSubcategoryRows = (node, depth) => {
+    // Mirrors the tree: shared subcategories under every parent,
+    // cycles cut per path
+    const addSubcategoryRows = (node, depth, path) => {
       subcategoryRows.push([
         "    ".repeat(depth) + stripCategoryPrefix(node.name),
         node.subtreeFileCount,
         node.subtreeViews,
         node.directViews,
       ]);
-      node.children.forEach((child) => addSubcategoryRows(child, depth + 1));
+      const childPath = new Set(path);
+      childPath.add(node);
+      for (const childId of node.childIds) {
+        const child = treeGraph[childId];
+        if (!childPath.has(child)) {
+          addSubcategoryRows(child, depth + 1, childPath);
+        }
+      }
     };
-    addSubcategoryRows(currentResult.categoryTree, 0);
+    addSubcategoryRows(treeGraph[0], 0, new Set());
     sheets.push({
       name: t("export.sheetBySubcategory"),
       rows: subcategoryRows,

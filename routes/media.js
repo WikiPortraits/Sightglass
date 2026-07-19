@@ -7,6 +7,7 @@ const { createJob, countUserPendingJobs } = require("../db");
 const { enqueueJob } = require("../jobs/processor");
 const {
   validateStatsParams,
+  monthlyRangeError,
   buildStatsUrl,
   getUserAgent,
   resolveDateRange,
@@ -81,6 +82,11 @@ router.get("/api/media/stats", requireAuth, apiLimiter, async (req, res) => {
     }
 
     const { startDate, endDate } = resolveDateRange(start, end);
+
+    if (granularity === "monthly") {
+      const rangeError = monthlyRangeError({ startDate, endDate });
+      if (rangeError) return res.status(400).json(rangeError);
+    }
 
     const baseName = normalizeFilename(filename);
 
@@ -253,7 +259,6 @@ router.get("/api/category/files", requireAuth, apiLimiter, async (req, res) => {
         getUserAgent(req.session.user.displayName),
         categoryDepth,
         undefined,
-        new Set(),
         {
           fileCount: 0,
           maxFiles: INTERACTIVE_MAX_FILES,
@@ -346,6 +351,12 @@ router.post(
       });
       if (validationError) {
         return res.status(400).json(validationError);
+      }
+
+      // Reject monthly ranges AQS would refuse
+      if (granularity === "monthly") {
+        const rangeError = monthlyRangeError(resolveDateRange(start, end));
+        if (rangeError) return res.status(400).json(rangeError);
       }
 
       const username = req.session.user.displayName;

@@ -101,6 +101,34 @@ function validateStatsParams({ start, end, granularity, referer, agent }) {
   return null;
 }
 
+/**
+ * AQS rejects monthly ranges containing no full calendar month; catch
+ * that up front instead of failing every per-file request.
+ * Returns an error object or null.
+ */
+function monthlyRangeError({ startDate, endDate }) {
+  let year = Number(startDate.slice(0, 4));
+  let month = Number(startDate.slice(4, 6));
+  if (startDate.slice(6, 8) !== "01") {
+    month++;
+    if (month > 12) {
+      month = 1;
+      year++;
+    }
+  }
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const firstFullMonthEnd = `${year}${String(month).padStart(2, "0")}${String(lastDay).padStart(2, "0")}`;
+  if (firstFullMonthEnd <= endDate) {
+    return null;
+  }
+  return {
+    error: "Invalid date range",
+    message:
+      "Monthly granularity requires a date range that includes at least one full calendar month.",
+    messageKey: "api.monthlyNeedsFullMonth",
+  };
+}
+
 /** Build mediarequests per-file API URL, each segment encoded */
 function buildStatsUrl(
   referer,
@@ -329,6 +357,22 @@ async function fetchCategoryListing(
 
     const data = await response.json();
 
+    // The action API reports errors as HTTP 200; treating one as an
+    // empty listing would silently truncate results
+    if (data.error) {
+      if (data.error.code === "invalidtitle") {
+        throw apiError({
+          message: `"${categoryName}" is not a valid category name.`,
+          messageKey: "api.invalidCategoryTitle",
+          messageParams: [categoryName],
+          statusCode: 400,
+        });
+      }
+      throw apiError({
+        message: `Commons API error while listing ${categoryName}: ${data.error.info || data.error.code}`,
+      });
+    }
+
     if (!data.query || !data.query.categorymembers) {
       break;
     }
@@ -358,25 +402,27 @@ async function fetchCategoryListing(
 }
 
 /**
- * A category's subtree of direct files and child categories.
- * Crawled level-by-level so a category reachable by several paths is
- * always claimed at its shallowest depth.
+ * A category's graph of direct files and child categories. Each category
+ * is fetched once, at its shallowest depth, but every parent→child edge
+ * is kept, so shared subcategories appear under each parent. Returns
+ * { nodes } with children as node indices and the root at index 0.
+ * Edges may form cycles; consumers cut them when walking.
  */
 async function fetchCategoryTree(
   categoryName,
   userAgent,
   depth = 0,
   lane = undefined,
-  visited = new Set(),
   tally = { fileCount: 0 },
 ) {
-  if (visited.has(categoryName)) {
-    return null;
-  }
-  visited.add(categoryName);
+  const nodesByName = new Map();
+  const makeNode = (name) => {
+    const node = { name, files: [], children: [] };
+    nodesByName.set(name, node);
+    return node;
+  };
 
-  const root = { name: categoryName, files: [], children: [] };
-  let tier = [root];
+  let tier = [makeNode(categoryName)];
   let remaining = depth;
 
   while (tier.length > 0) {
@@ -384,35 +430,38 @@ async function fetchCategoryTree(
       fetchCategoryListing(node.name, remaining > 0, userAgent, lane, tally),
     );
 
-    // Claim children only after the whole tier is fetched, in tier order,
-    // so ties between same-depth parents resolve deterministically
     const nextTier = [];
     tier.forEach((node, index) => {
       node.files = listings[index].files;
       for (const name of listings[index].subcategories) {
-        if (visited.has(name)) {
-          continue;
+        let child = nodesByName.get(name);
+        if (!child) {
+          child = makeNode(name);
+          nextTier.push(child);
         }
-        visited.add(name);
-        const child = { name, files: [], children: [] };
-        node.children.push(child);
-        nextTier.push(child);
+        if (child !== node) {
+          node.children.push(child);
+        }
       }
     });
     tier = nextTier;
     remaining--;
   }
 
-  return root;
+  const nodes = Array.from(nodesByName.values());
+  const indexByNode = new Map(nodes.map((node, index) => [node, index]));
+  return {
+    nodes: nodes.map((node) => ({
+      name: node.name,
+      files: node.files,
+      children: node.children.map((child) => indexByNode.get(child)),
+    })),
+  };
 }
 
-/** Flatten a category tree into its member files */
-function collectTreeFiles(node, files = []) {
-  files.push(...node.files);
-  for (const child of node.children) {
-    collectTreeFiles(child, files);
-  }
-  return files;
+/** Flatten a category graph into its member files */
+function collectTreeFiles(graph) {
+  return graph.nodes.flatMap((node) => node.files);
 }
 
 /** Reduce a Commons extmetadata HTML value (link, or a credit table) to text */
@@ -467,7 +516,8 @@ function trimDateTaken(taken) {
  * Failed batch leaves files bare rather than failing the job
  * @param checkCancelled - called before each batch; may throw to abort
  * @returns {Map<string, object>} filename (no "File:" prefix) ->
- *   { author?, license?, licenseUrl?, taken?, uploaded?, usage: [[host, title], …] }
+ *   { author?, license?, licenseUrl?, taken?, uploaded?,
+ *     usage: [[host, title], …], usageTruncated? }
  */
 async function fetchFileMetadata(
   titles,
@@ -568,10 +618,13 @@ async function fetchFileMetadata(
           }
 
           for (const usage of page.globalusage || []) {
-            if (entry.usage.length >= MAX_USAGE_PER_FILE) break;
-            if (countsAsUsage(usage)) {
-              entry.usage.push([usageHost(usage), usage.title]);
+            if (!countsAsUsage(usage)) continue;
+            if (entry.usage.length >= MAX_USAGE_PER_FILE) {
+              // Lets the UI show "500+"
+              entry.usageTruncated = true;
+              break;
             }
+            entry.usage.push([usageHost(usage), usage.title]);
           }
         }
         cont = data.continue || null;
@@ -618,6 +671,7 @@ module.exports = {
   COMMONS_API_URL,
   FETCH_CONCURRENCY,
   validateStatsParams,
+  monthlyRangeError,
   buildStatsUrl,
   getUserAgent,
   resolveDateRange,

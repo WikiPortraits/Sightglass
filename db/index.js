@@ -207,6 +207,19 @@ const statements = {
     WHERE owner_id = ? AND status IN ('pending', 'running')
   `),
 
+  countUserJobs: db.prepare(`
+    SELECT COUNT(*) AS count FROM jobs WHERE owner_id = ?
+  `),
+
+  countAllJobs: db.prepare(`
+    SELECT COUNT(*) AS count FROM jobs
+  `),
+
+  countSavedJobsForUser: db.prepare(`
+    SELECT COUNT(*) AS count FROM jobs
+    WHERE EXISTS(SELECT 1 FROM job_saves s WHERE s.job_id = jobs.id AND s.user_id = ?)
+  `),
+
   deleteOldJobs: db.prepare(`
     DELETE FROM jobs
     WHERE (completed_at < ? OR (status = 'pending' AND created_at < ?))
@@ -454,6 +467,19 @@ function countUserPendingJobs(ownerId) {
   return statements.countUserPendingJobs.get(ownerId).count;
 }
 
+// Full counts for the job list endpoints' truncation notes
+function countUserJobs(ownerId) {
+  return statements.countUserJobs.get(ownerId).count;
+}
+
+function countAllJobs() {
+  return statements.countAllJobs.get().count;
+}
+
+function countSavedJobsForUser(userId) {
+  return statements.countSavedJobsForUser.get(userId).count;
+}
+
 // Delete jobs older than daysOld unless saved, or recently unsaved (grace period)
 function cleanupOldJobs(daysOld = JOB_RETENTION_DAYS) {
   const now = Date.now();
@@ -550,6 +576,9 @@ module.exports = {
   isJobSavedBy,
   getPendingJobs,
   countUserPendingJobs,
+  countUserJobs,
+  countAllJobs,
+  countSavedJobsForUser,
   cleanupOldJobs,
   resetStaleRunningJobs,
   storeJobDetailChunk,

@@ -42,79 +42,28 @@ const CHECKPOINT_INTERVAL = Math.max(
 );
 
 // Bump when the checkpoint layout changes; mismatches are discarded
-const CHECKPOINT_VERSION = 1;
+// v2: category tree became a flat node graph with children as indices
+const CHECKPOINT_VERSION = 2;
 
 const yieldEventLoop = () => new Promise((resolve) => setImmediate(resolve));
 
 /**
- * Per-node view rollups for the subcategory tree.
- * Subtree totals dedupe files, so siblings can sum to more than a parent.
+ * Maps each file to its direct parent nodes and to every node whose
+ * subtree contains it (the parents' ancestor closure). BFS with a
+ * visited set, so shared subcategories and cycles count a file once.
+ * Ids index graph.nodes; the root is 0.
  */
-function summarizeCategoryTree(node, fileIndexByName, fileStats) {
-  const fileIndexes = [];
-  const subtreeIndexes = new Set();
+function indexTreeMembership(graph, files) {
+  const indexByName = new Map(files.map((name, index) => [name, index]));
+  const { nodes } = graph;
 
-  for (const member of node.files) {
-    const index = fileIndexByName.get(member.title.replace("File:", ""));
-    if (index !== undefined && !subtreeIndexes.has(index)) {
-      fileIndexes.push(index);
-      subtreeIndexes.add(index);
-    }
-  }
-
-  const directViews = fileIndexes.reduce(
-    (sum, index) => sum + fileStats[index].totalViews,
-    0,
-  );
-
-  const children = [];
-  for (const childNode of node.children) {
-    const child = summarizeCategoryTree(childNode, fileIndexByName, fileStats);
-    if (child.summary.subtreeFileCount === 0) {
-      continue;
-    }
-    children.push(child.summary);
-    child.subtreeIndexes.forEach((index) => subtreeIndexes.add(index));
-  }
-  children.sort((a, b) => b.subtreeViews - a.subtreeViews);
-
-  let subtreeViews = 0;
-  subtreeIndexes.forEach((index) => {
-    subtreeViews += fileStats[index].totalViews;
+  const parentsById = nodes.map(() => []);
+  nodes.forEach((node, id) => {
+    node.children.forEach((childId) => parentsById[childId].push(id));
   });
 
-  return {
-    summary: {
-      name: node.name,
-      // Links to the timeline accumulators; removed by persistJobDetails
-      rawId: node.rawId,
-      fileIndexes,
-      directViews,
-      subtreeViews,
-      subtreeFileCount: subtreeIndexes.size,
-      children,
-    },
-    subtreeIndexes,
-  };
-}
-
-/**
- * Stamps rawId on each node and maps every unique file to its nodes,
- * direct and subtree (ancestor chains). Subtree lists count a file once
- * even when subcategories share it, matching summarizeCategoryTree.
- */
-function indexTreeMembership(tree, files) {
-  const indexByName = new Map(files.map((name, index) => [name, index]));
-  const chains = []; // chains[rawId] = rawIds from the root down to that node
   const directByFile = files.map(() => []);
-  let rawCount = 0;
-
-  (function walk(node, parentChain) {
-    const rawId = rawCount++;
-    node.rawId = rawId;
-    const chain = parentChain.concat(rawId);
-    chains.push(chain);
-
+  nodes.forEach((node, id) => {
     const seen = new Set();
     for (const member of node.files) {
       const index = indexByName.get(member.title.replace("File:", ""));
@@ -122,22 +71,94 @@ function indexTreeMembership(tree, files) {
         continue;
       }
       seen.add(index);
-      directByFile[index].push(rawId);
+      directByFile[index].push(id);
     }
-    node.children.forEach((child) => walk(child, chain));
-  })(tree, []);
+  });
 
-  // Files in a single category (the common case) share that node's chain
+  const closures = new Array(nodes.length).fill(null);
+  const closureOf = (id) => {
+    if (closures[id]) return closures[id];
+    const visited = new Set([id]);
+    const queue = [id];
+    while (queue.length > 0) {
+      for (const parent of parentsById[queue.pop()]) {
+        if (!visited.has(parent)) {
+          visited.add(parent);
+          queue.push(parent);
+        }
+      }
+    }
+    return (closures[id] = Array.from(visited));
+  };
+
+  // Files in a single category (the common case) share that node's closure
   const subtreeByFile = directByFile.map((direct) => {
     if (direct.length === 1) {
-      return chains[direct[0]];
+      return closureOf(direct[0]);
     }
     const merged = new Set();
-    direct.forEach((rawId) => chains[rawId].forEach((id) => merged.add(id)));
+    direct.forEach((id) => closureOf(id).forEach((a) => merged.add(a)));
     return Array.from(merged);
   });
 
-  return { rawCount, directByFile, subtreeByFile };
+  return { rawCount: nodes.length, directByFile, subtreeByFile };
+}
+
+/**
+ * Per-node rollups: each file counts once toward every node in its
+ * subtree set, so siblings sharing files can sum to more than a parent.
+ * Nodes with no files in their subtree are dropped and ids compacted.
+ * rawId (accumulator index) is removed by persistJobDetails.
+ */
+function summarizeCategoryGraph(
+  graph,
+  membership,
+  files,
+  fileIndexByName,
+  fileStats,
+) {
+  const summaries = graph.nodes.map((node) => ({
+    name: node.name,
+    rawId: null,
+    fileIndexes: [],
+    directViews: 0,
+    subtreeViews: 0,
+    subtreeFileCount: 0,
+    children: node.children,
+  }));
+
+  files.forEach((filename, fetchIndex) => {
+    const sortedIndex = fileIndexByName.get(filename);
+    const views = fileStats[sortedIndex].totalViews;
+    membership.directByFile[fetchIndex].forEach((id) => {
+      summaries[id].fileIndexes.push(sortedIndex);
+      summaries[id].directViews += views;
+    });
+    membership.subtreeByFile[fetchIndex].forEach((id) => {
+      summaries[id].subtreeViews += views;
+      summaries[id].subtreeFileCount += 1;
+    });
+  });
+
+  const keep = summaries.map(
+    (summary, id) => id === 0 || summary.subtreeFileCount > 0,
+  );
+  const newId = summaries.map(() => -1);
+  const compact = [];
+  summaries.forEach((summary, id) => {
+    if (!keep[id]) return;
+    newId[id] = compact.length;
+    summary.rawId = id;
+    summary.fileIndexes.sort((a, b) => a - b);
+    compact.push(summary);
+  });
+  compact.forEach((summary) => {
+    summary.children = summary.children
+      .filter((id) => keep[id])
+      .map((id) => newId[id])
+      .sort((a, b) => compact[b].subtreeViews - compact[a].subtreeViews);
+  });
+  return compact;
 }
 
 /** Merge a file's [timestamp, requests] items into an accumulator */
@@ -241,8 +262,9 @@ async function loadStatsCheckpoints(
 }
 
 /**
- * Stamp pre-order nodeIndex on each summary node and write the final
- * job_data entries in chunked, yielding transactions. Per-file items are
+ * Write the final job_data entries in chunked, yielding transactions.
+ * Node timelines are keyed by summary array index; rawId links each
+ * node to its accumulators and is dropped here. Per-file items are
  * copied from stats:<fetchIndex> checkpoint rows to sorted file:<index>
  * keys inside SQLite. Checkpoints are removed after completeJob, not
  * here, so a crash mid-persist resumes instead of refetching.
@@ -303,26 +325,21 @@ async function persistJobDetails(
     }
   }
 
-  let nextNodeIndex = 0;
-  async function annotate(node) {
-    node.nodeIndex = nextNodeIndex++;
+  for (let nodeIndex = 0; nodeIndex < categorySummary.length; nodeIndex++) {
+    const node = categorySummary[nodeIndex];
     const { rawId } = node;
     delete node.rawId;
     await push(
-      `node:${node.nodeIndex}`,
+      `node:${nodeIndex}`,
       await gzip(JSON.stringify(sortedTimeline(subtreeTimelines[rawId]))),
     );
     if (node.children.length > 0 && node.fileIndexes.length > 0) {
       await push(
-        `nodedirect:${node.nodeIndex}`,
+        `nodedirect:${nodeIndex}`,
         await gzip(JSON.stringify(sortedTimeline(directTimelines[rawId]))),
       );
     }
-    for (const child of node.children) {
-      await annotate(child);
-    }
   }
-  await annotate(categorySummary);
 
   await flush();
 }
@@ -359,18 +376,11 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
   } else {
     ({ startDate, endDate } = resolveDateRange(start, end));
     clearJobData(jobId); // drop rows from incompatible earlier runs
-    categoryTree = await fetchCategoryTree(
-      categoryName,
-      userAgent,
-      depth,
-      jobId,
-      new Set(),
-      {
-        fileCount: 0,
-        // Keeps cancellation responsive during long crawls
-        shouldAbort: () => getJobMeta(jobId)?.status === "cancelled",
-      },
-    );
+    categoryTree = await fetchCategoryTree(categoryName, userAgent, depth, jobId, {
+      fileCount: 0,
+      // Keeps cancellation responsive during long crawls
+      shouldAbort: () => getJobMeta(jobId)?.status === "cancelled",
+    });
     await saveCheckpoint(jobId, "checkpoint:tree", {
       tree: categoryTree,
       startDate,
@@ -588,8 +598,10 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
   const fileIndexByName = new Map(
     fileStats.map((file, index) => [file.filename, index]),
   );
-  const { summary: categorySummary } = summarizeCategoryTree(
+  const categorySummary = summarizeCategoryGraph(
     categoryTree,
+    membership,
+    files,
     fileIndexByName,
     fileStats,
   );
@@ -635,6 +647,7 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
       if (meta.uploaded) entry.uploaded = meta.uploaded;
       // Rows show only the count; the page list is fetched on expand
       if (meta.usage.length > 0) entry.usage = meta.usage.length;
+      if (meta.usageTruncated) entry.usageTruncated = true;
     }
     return entry;
   });

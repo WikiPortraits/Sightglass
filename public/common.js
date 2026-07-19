@@ -49,6 +49,64 @@
       });
   }
 
+  // AQS omits zero-request periods, which skews charts and per-day
+  // averages. Fill the gaps with zeros; monthly fills only full
+  // calendar months, matching AQS.
+  function zeroFillTimeline(items, startDate, endDate, granularity) {
+    const start = String(startDate || "");
+    const end = String(endDate || "");
+    if (!/^\d{8}$/.test(start) || !/^\d{8}$/.test(end)) return items;
+
+    const keyLength = granularity === "monthly" ? 6 : 8;
+    const byKey = new Map(
+      items.map((item) => [String(item.timestamp).slice(0, keyLength), item]),
+    );
+
+    const filled = [];
+    if (granularity === "monthly") {
+      let year = Number(start.slice(0, 4));
+      let month = Number(start.slice(4, 6));
+      if (start.slice(6, 8) !== "01") {
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
+      }
+      for (;;) {
+        const key = `${year}${String(month).padStart(2, "0")}`;
+        const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        if (`${key}${String(lastDay).padStart(2, "0")}` > end) break;
+        filled.push(byKey.get(key) || { timestamp: `${key}0100`, requests: 0 });
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
+      }
+    } else {
+      const date = new Date(
+        Date.UTC(
+          Number(start.slice(0, 4)),
+          Number(start.slice(4, 6)) - 1,
+          Number(start.slice(6, 8)),
+        ),
+      );
+      const endUtc = new Date(
+        Date.UTC(
+          Number(end.slice(0, 4)),
+          Number(end.slice(4, 6)) - 1,
+          Number(end.slice(6, 8)),
+        ),
+      );
+      for (; date <= endUtc; date.setUTCDate(date.getUTCDate() + 1)) {
+        const key = date.toISOString().slice(0, 10).replace(/-/g, "");
+        filled.push(byKey.get(key) || { timestamp: `${key}00`, requests: 0 });
+      }
+    }
+    return filled;
+  }
+
   // Localize server message when key is known
   // Fallback to the server's English text
   function apiMessage(payload, fallback) {
@@ -93,5 +151,6 @@
     initTheme,
     bindThemeToggle,
     apiMessage,
+    zeroFillTimeline,
   };
 })(window);

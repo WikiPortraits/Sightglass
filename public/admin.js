@@ -5,6 +5,8 @@ const escapeHtml = MediaViewCommon.escapeHtml;
 const t = MediaViewI18n.t;
 
 let allJobs = [];
+// True total from X-Total-Count (rows are capped at 500)
+let totalJobCount = 0;
 // Days before an unsaved job is deleted (JOB_RETENTION_DAYS, injected at render)
 const retentionDays = Number(document.body.dataset.retentionDays) || 30;
 // Extra days granted after a job's last save is removed (JOB_UNSAVE_GRACE_DAYS)
@@ -96,6 +98,7 @@ async function loadAllJobs() {
     }
 
     allJobs = await response.json();
+    totalJobCount = Number(response.headers.get("X-Total-Count")) || 0;
     setupSortableHeaders();
     renderJobsTable();
   } catch (error) {
@@ -181,11 +184,11 @@ function renderJobsTable() {
   const visible = visibleJobs();
 
   if (countLine) {
-    countLine.textContent = t(
-      "admin.showingCount",
-      visible.length,
-      allJobs.length,
-    );
+    let text = t("admin.showingCount", visible.length, allJobs.length);
+    if (totalJobCount > allJobs.length) {
+      text += ` ${t("admin.cappedNote", allJobs.length, totalJobCount)}`;
+    }
+    countLine.textContent = text;
     countLine.style.display = "block";
   }
 
