@@ -10,6 +10,9 @@ const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 10000;
 
+// Abort attempts whose socket hangs; the retry path picks them up.
+const REQUEST_TIMEOUT = 60000;
+
 // ms between AQS stats requests; AQS tolerates far higher rates than the
 // action API
 const AQS_REQUEST_DELAY = Math.max(
@@ -200,7 +203,10 @@ async function fetchWithRetry(url, options = {}, lane, retries = MAX_RETRIES) {
 
   await throttle.acquireSlot(lane);
   try {
-    const response = await fetch(url, options);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+      ...options,
+    });
     const retriable =
       response.status === 429 ||
       (response.status >= 500 && response.status < 600);
@@ -401,12 +407,29 @@ async function fetchCategoryListing(
   return { files, subcategories };
 }
 
+/** Flatten the crawl graph to { nodes } with children as node indices */
+function serializeGraph(nodesByName) {
+  const nodes = Array.from(nodesByName.values());
+  const indexByNode = new Map(nodes.map((node, index) => [node, index]));
+  return {
+    nodes: nodes.map((node) => ({
+      name: node.name,
+      files: node.files,
+      children: node.children.map((child) => indexByNode.get(child)),
+    })),
+  };
+}
+
 /**
  * A category's graph of direct files and child categories. Each category
  * is fetched once, at its shallowest depth, but every parent→child edge
  * is kept, so shared subcategories appear under each parent. Returns
  * { nodes } with children as node indices and the root at index 0.
  * Edges may form cycles; consumers cut them when walking.
+ *
+ * resume.onTierDone(state) is called after every completed tier with a
+ * restartable snapshot; passing one back as resume.state continues the
+ * crawl from that tier instead of starting over.
  */
 async function fetchCategoryTree(
   categoryName,
@@ -414,6 +437,7 @@ async function fetchCategoryTree(
   depth = 0,
   lane = undefined,
   tally = { fileCount: 0 },
+  resume = {},
 ) {
   const nodesByName = new Map();
   const makeNode = (name) => {
@@ -422,8 +446,30 @@ async function fetchCategoryTree(
     return node;
   };
 
-  let tier = [makeNode(categoryName)];
-  let remaining = depth;
+  let tier;
+  let remaining;
+  if (resume.state) {
+    // Revive in serialized order so the child indices stay valid
+    const revived = resume.state.nodes.map((node) => {
+      const copy = makeNode(node.name);
+      copy.files = node.files;
+      return copy;
+    });
+    revived.forEach((node, index) => {
+      node.children = resume.state.nodes[index].children.map(
+        (childIndex) => revived[childIndex],
+      );
+    });
+    tier = resume.state.pending
+      .map((name) => nodesByName.get(name))
+      .filter(Boolean);
+    remaining = resume.state.remaining;
+    // Restored so the max-files cap doesn't double-count crawled tiers
+    tally.fileCount = resume.state.fileCount;
+  } else {
+    tier = [makeNode(categoryName)];
+    remaining = depth;
+  }
   let crawled = 0;
 
   while (tier.length > 0) {
@@ -465,17 +511,18 @@ async function fetchCategoryTree(
     });
     tier = nextTier;
     remaining--;
+
+    if (resume.onTierDone && tier.length > 0) {
+      await resume.onTierDone({
+        nodes: serializeGraph(nodesByName).nodes,
+        pending: tier.map((node) => node.name),
+        remaining,
+        fileCount: tally.fileCount,
+      });
+    }
   }
 
-  const nodes = Array.from(nodesByName.values());
-  const indexByNode = new Map(nodes.map((node, index) => [node, index]));
-  return {
-    nodes: nodes.map((node) => ({
-      name: node.name,
-      files: node.files,
-      children: node.children.map((child) => indexByNode.get(child)),
-    })),
-  };
+  return serializeGraph(nodesByName);
 }
 
 /** Flatten a category graph into its member files */
@@ -534,6 +581,11 @@ function trimDateTaken(taken) {
  * author, license, dates (imageinfo), and mainspace global usage
  * Failed batch leaves files bare rather than failing the job
  * @param checkCancelled - called before each batch; may throw to abort
+ * @param resume - { completedBatches?: Set<number>, onBatchDone? };
+ *   completed batches are skipped (the caller already has their
+ *   entries), and onBatchDone(batchIndex, entries) fires after each
+ *   successful batch so callers can checkpoint it. Failed batches
+ *   don't fire it, so a restart retries them.
  * @returns {Map<string, object>} filename (no "File:" prefix) ->
  *   { author?, license?, licenseUrl?, taken?, uploaded?,
  *     usage: [[host, title], …], usageTruncated? }
@@ -543,15 +595,10 @@ async function fetchFileMetadata(
   userAgent,
   checkCancelled = () => {},
   lane = undefined,
+  resume = {},
 ) {
+  const { completedBatches = new Set(), onBatchDone } = resume;
   const metadata = new Map();
-  const entryFor = (title) => {
-    const key = title.replace(/^File:/, "");
-    if (!metadata.has(key)) {
-      metadata.set(key, { usage: [] });
-    }
-    return metadata.get(key);
-  };
 
   const batches = [];
   for (let offset = 0; offset < titles.length; offset += METADATA_BATCH_SIZE) {
@@ -560,13 +607,26 @@ async function fetchFileMetadata(
 
   if (lane) {
     console.log(
-      `📇 Job ${lane}: Fetching metadata for ${titles.length} files (${batches.length} batches)`,
+      `📇 Job ${lane}: Fetching metadata for ${titles.length} files (${batches.length - completedBatches.size}/${batches.length} batches to fetch)`,
     );
   }
-  let batchesDone = 0;
+  let batchesDone = completedBatches.size;
 
   await mapWithConcurrency(batches, FETCH_CONCURRENCY, async (batch, batchIndex) => {
+    if (completedBatches.has(batchIndex)) {
+      return;
+    }
     checkCancelled();
+
+    // Per-batch map so a finished batch checkpoints as one atomic unit
+    const batchEntries = new Map();
+    const entryFor = (title) => {
+      const key = title.replace(/^File:/, "");
+      if (!batchEntries.has(key)) {
+        batchEntries.set(key, { usage: [] });
+      }
+      return batchEntries.get(key);
+    };
 
     const offset = batchIndex * METADATA_BATCH_SIZE;
     const params = {
@@ -660,11 +720,19 @@ async function fetchFileMetadata(
           `⚠️  Metadata batch at ${offset} still had more usage rows after ${MAX_METADATA_CONTINUATIONS} rounds; some usage lists are truncated`,
         );
       }
+      if (onBatchDone) {
+        await onBatchDone(batchIndex, batchEntries);
+      }
     } catch (error) {
       if (error.message === "Job cancelled by user") throw error;
       console.warn(
         `⚠️  Metadata batch at ${offset} failed (${error.message}); continuing without metadata for those files`,
       );
+    }
+
+    // Partial entries from a failed batch still beat bare files
+    for (const [key, entry] of batchEntries) {
+      metadata.set(key, entry);
     }
 
     batchesDone++;
@@ -703,6 +771,7 @@ function normalizeFilename(filename) {
 module.exports = {
   COMMONS_API_URL,
   FETCH_CONCURRENCY,
+  METADATA_BATCH_SIZE,
   validateStatsParams,
   monthlyRangeError,
   buildStatsUrl,

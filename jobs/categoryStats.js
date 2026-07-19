@@ -24,6 +24,7 @@ const {
   fetchFileMetadata,
   normalizeFilename,
   FETCH_CONCURRENCY,
+  METADATA_BATCH_SIZE,
 } = require("../services/wikimedia");
 
 const gzip = promisify(zlib.gzip);
@@ -191,6 +192,56 @@ async function loadCheckpoint(jobId, key) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Metadata batches checkpointed by an earlier run.
+ * Returns the merged entries + the completed batch indexes.
+ * Bad rows are deleted so those batches refetch.
+ */
+async function loadMetadataCheckpoints(jobId, batchCount) {
+  const entries = [];
+  const completedBatches = new Set();
+  const staleKeys = [];
+  let afterKey = "";
+
+  for (;;) {
+    const rows = getJobDataPage(jobId, "checkpoint:meta:%", afterKey, 200);
+    if (rows.length === 0) {
+      break;
+    }
+    afterKey = rows[rows.length - 1].key;
+
+    for (const row of rows) {
+      const index = Number.parseInt(
+        row.key.slice("checkpoint:meta:".length),
+        10,
+      );
+      if (!Number.isInteger(index) || index < 0 || index >= batchCount) {
+        staleKeys.push(row.key);
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(zlib.gunzipSync(row.data).toString());
+        if (parsed.version !== CHECKPOINT_VERSION) {
+          staleKeys.push(row.key);
+          continue;
+        }
+        entries.push(...parsed.data);
+        completedBatches.add(index);
+      } catch {
+        staleKeys.push(row.key);
+      }
+    }
+
+    checkJobCancelled(jobId);
+    await yieldEventLoop();
+  }
+
+  if (staleKeys.length > 0) {
+    deleteJobDataMatching(jobId, staleKeys); // keys contain no wildcards
+  }
+  return { entries, completedBatches };
 }
 
 /**
@@ -374,19 +425,45 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
     ({ tree: categoryTree, startDate, endDate } = treeCheckpoint);
     console.log(`↩️  Job ${jobId}: Resuming from checkpointed category tree`);
   } else {
-    ({ startDate, endDate } = resolveDateRange(start, end));
-    clearJobData(jobId); // drop rows from incompatible earlier runs
-    console.log(`🌳 Job ${jobId}: Crawling category tree (depth ${depth})`);
-    categoryTree = await fetchCategoryTree(categoryName, userAgent, depth, jobId, {
-      fileCount: 0,
-      // Keeps cancellation responsive during long crawls
-      shouldAbort: () => getJobMeta(jobId)?.status === "cancelled",
-    });
+    const crawlCheckpoint = await loadCheckpoint(jobId, "checkpoint:crawl");
+    if (crawlCheckpoint) {
+      ({ startDate, endDate } = crawlCheckpoint);
+      console.log(
+        `↩️  Job ${jobId}: Resuming category crawl with ${crawlCheckpoint.nodes.length} categories already crawled`,
+      );
+    } else {
+      ({ startDate, endDate } = resolveDateRange(start, end));
+      clearJobData(jobId); // drop rows from incompatible earlier runs
+      console.log(`🌳 Job ${jobId}: Crawling category tree (depth ${depth})`);
+    }
+    categoryTree = await fetchCategoryTree(
+      categoryName,
+      userAgent,
+      depth,
+      jobId,
+      {
+        fileCount: 0,
+        // Keeps cancellation responsive during long crawls
+        shouldAbort: () => getJobMeta(jobId)?.status === "cancelled",
+      },
+      {
+        state: crawlCheckpoint,
+        // Every finished tier is a resume point; the date range rides
+        // along so it stays pinned to the first attempt
+        onTierDone: (state) =>
+          saveCheckpoint(jobId, "checkpoint:crawl", {
+            ...state,
+            startDate,
+            endDate,
+          }),
+      },
+    );
     await saveCheckpoint(jobId, "checkpoint:tree", {
       tree: categoryTree,
       startDate,
       endDate,
     });
+    deleteJobDataMatching(jobId, ["checkpoint:crawl"]);
   }
 
   checkJobCancelled(jobId);
@@ -404,25 +481,43 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
 
   const files = uniqueFiles.map((member) => member.title.replace("File:", ""));
 
-  // Fetch metadata (50 files per request), unless already checkpointed
+  // Fetch metadata (50 files per request); each batch checkpoints as it
+  // lands, so a restart refetches only unfinished batches
   let metadataByFilename;
   const metadataCheckpoint = await loadCheckpoint(jobId, "checkpoint:metadata");
   if (metadataCheckpoint) {
+    // Consolidated checkpoint written by earlier versions
     metadataByFilename = new Map(metadataCheckpoint);
     console.log(`↩️  Job ${jobId}: Resuming from checkpointed metadata`);
   } else {
+    const batchCount = Math.ceil(uniqueFiles.length / METADATA_BATCH_SIZE);
+    const { entries, completedBatches } = await loadMetadataCheckpoints(
+      jobId,
+      batchCount,
+    );
+    if (completedBatches.size > 0) {
+      console.log(
+        `↩️  Job ${jobId}: Resuming metadata with ${completedBatches.size}/${batchCount} batches already fetched`,
+      );
+    }
     metadataByFilename = await fetchFileMetadata(
       uniqueFiles.map((member) => member.title),
       userAgent,
       () => checkJobCancelled(jobId),
       jobId,
+      {
+        completedBatches,
+        onBatchDone: (batchIndex, batchEntries) =>
+          saveCheckpoint(
+            jobId,
+            `checkpoint:meta:${batchIndex}`,
+            Array.from(batchEntries.entries()),
+          ),
+      },
     );
-    await saveCheckpoint(
-      jobId,
-      "checkpoint:metadata",
-      Array.from(metadataByFilename.entries()),
-    );
-    console.log(`💾 Job ${jobId}: Metadata checkpointed`);
+    for (const [filename, entry] of entries) {
+      metadataByFilename.set(filename, entry);
+    }
   }
 
   // Node timelines accumulate as each file's stats arrive, so raw item
