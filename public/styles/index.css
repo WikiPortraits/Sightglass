@@ -434,7 +434,7 @@
 }
 
 .jobs-table-compact .job-expiry-note {
-  color: var(--error-header);
+  color: var(--error-text);
   font-size: 0.625rem;
   font-weight: var(--font-weight-normal);
   margin-top: 0.125rem;
