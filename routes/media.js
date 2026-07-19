@@ -271,7 +271,7 @@ router.get("/api/category/files", requireAuth, apiLimiter, async (req, res) => {
     if (categoryMembers.length === 0) {
       return res.status(404).json({
         error: "Category empty",
-        message: "Category not found or contains no files",
+        message: "Category not found or contains no files at the specified depth",
         messageKey: "api.categoryEmpty",
       });
     }

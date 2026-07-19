@@ -396,7 +396,7 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
 
   if (uniqueFiles.length === 0) {
     throw apiError({
-      message: "Category not found or contains no files",
+      message: "Category not found or contains no files at the specified depth",
       messageKey: "api.categoryEmpty",
     });
   }

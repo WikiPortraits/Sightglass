@@ -139,7 +139,7 @@
   "query.errorFetchCategory": "Failed to fetch category statistics. Please try again.",
   "api.categoryTooLarge": "Category contains more than $1 files. Please choose a smaller category or reduce the subcategory depth.",
   "api.categoryTreeTooLarge": "This category tree has too many subcategories to browse interactively. Please reduce the subcategory depth.",
-  "api.categoryEmpty": "Category not found or contains no files",
+  "api.categoryEmpty": "Category not found or contains no files at the specified depth",
   "api.rateLimitAfter": "Rate limit exceeded after processing $1 of $2 files",
   "api.wikimediaRateLimit": "Too many requests to Wikimedia API. Please try again in $1 seconds.",
   "api.statsNotFound": "No statistics found for this file. The file may not exist or has no recorded views.",
