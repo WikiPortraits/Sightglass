@@ -424,10 +424,29 @@ async function fetchCategoryTree(
 
   let tier = [makeNode(categoryName)];
   let remaining = depth;
+  let crawled = 0;
 
   while (tier.length > 0) {
-    const listings = await mapWithConcurrency(tier, FETCH_CONCURRENCY, (node) =>
-      fetchCategoryListing(node.name, remaining > 0, userAgent, lane, tally),
+    const listings = await mapWithConcurrency(
+      tier,
+      FETCH_CONCURRENCY,
+      async (node) => {
+        const listing = await fetchCategoryListing(
+          node.name,
+          remaining > 0,
+          userAgent,
+          lane,
+          tally,
+        );
+        // Progress for jobs only; interactive crawls are budget-capped
+        crawled++;
+        if (lane && crawled % 100 === 0) {
+          console.log(
+            `🌳 Job ${lane}: Crawled ${crawled} categories, ${tally.fileCount} files so far`,
+          );
+        }
+        return listing;
+      },
     );
 
     const nextTier = [];
@@ -539,6 +558,13 @@ async function fetchFileMetadata(
     batches.push(titles.slice(offset, offset + METADATA_BATCH_SIZE));
   }
 
+  if (lane) {
+    console.log(
+      `📇 Job ${lane}: Fetching metadata for ${titles.length} files (${batches.length} batches)`,
+    );
+  }
+  let batchesDone = 0;
+
   await mapWithConcurrency(batches, FETCH_CONCURRENCY, async (batch, batchIndex) => {
     checkCancelled();
 
@@ -638,6 +664,13 @@ async function fetchFileMetadata(
       if (error.message === "Job cancelled by user") throw error;
       console.warn(
         `⚠️  Metadata batch at ${offset} failed (${error.message}); continuing without metadata for those files`,
+      );
+    }
+
+    batchesDone++;
+    if (lane && (batchesDone % 100 === 0 || batchesDone === batches.length)) {
+      console.log(
+        `📇 Job ${lane}: Metadata progress: ${batchesDone}/${batches.length} batches`,
       );
     }
   });

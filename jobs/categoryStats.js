@@ -376,6 +376,7 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
   } else {
     ({ startDate, endDate } = resolveDateRange(start, end));
     clearJobData(jobId); // drop rows from incompatible earlier runs
+    console.log(`🌳 Job ${jobId}: Crawling category tree (depth ${depth})`);
     categoryTree = await fetchCategoryTree(categoryName, userAgent, depth, jobId, {
       fileCount: 0,
       // Keeps cancellation responsive during long crawls
@@ -408,6 +409,7 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
   const metadataCheckpoint = await loadCheckpoint(jobId, "checkpoint:metadata");
   if (metadataCheckpoint) {
     metadataByFilename = new Map(metadataCheckpoint);
+    console.log(`↩️  Job ${jobId}: Resuming from checkpointed metadata`);
   } else {
     metadataByFilename = await fetchFileMetadata(
       uniqueFiles.map((member) => member.title),
@@ -420,6 +422,7 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
       "checkpoint:metadata",
       Array.from(metadataByFilename.entries()),
     );
+    console.log(`💾 Job ${jobId}: Metadata checkpointed`);
   }
 
   // Node timelines accumulate as each file's stats arrive, so raw item
@@ -607,6 +610,7 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
   );
 
   checkJobCancelled(jobId);
+  console.log(`💾 Job ${jobId}: Persisting results...`);
   await persistJobDetails(
     jobId,
     categorySummary,
