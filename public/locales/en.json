@@ -265,6 +265,7 @@
   "results.loadingPageList": "Loading page list…",
   "results.pageListError": "Could not load the page list.",
   "export.title": "Wikimedia Sightglass export",
+  "export.fileName": "Sightglass Results",
   "export.category": "Category",
   "export.dateRange": "Date range",
   "export.granularity": "Granularity",

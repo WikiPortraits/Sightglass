@@ -2151,7 +2151,6 @@ function downloadCategoryWorkbook() {
   const p = currentJobParameters || {};
   const rawCategory = p.category || "category";
   const categoryName = rawCategory.replace(/^Category:/i, "").trim();
-  const baseName = categoryName.replace(/[\\/:*?"<>|\s]+/g, "_") || "category";
   const granularity = currentResult.granularity;
   const periodHeader =
     granularity === "monthly" ? t("export.colMonth") : t("export.colDate");
@@ -2271,7 +2270,31 @@ function downloadCategoryWorkbook() {
   const blob = new Blob([workbook], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  triggerBlobDownload(`${baseName}.xlsx`, blob);
+  triggerBlobDownload(workbookFileName(categoryName, p), blob);
+}
+
+// "Sightglass Results - <category> - <start> to <end>.xlsx"
+function workbookFileName(categoryName, params) {
+  const parts = [t("export.fileName"), categoryName || "category"];
+  const range = [fileNameDate(params.start), fileNameDate(params.end)]
+    .filter(Boolean)
+    .join(" to ");
+  if (range) parts.push(range);
+  const base = parts
+    .join(" - ")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  return `${base}.xlsx`;
+}
+
+// ISO date for filenames; locale-formatted dates may contain slashes
+function fileNameDate(raw) {
+  if (!raw) return "";
+  const s = String(raw).replace(/-/g, "");
+  if (s.length !== 8) return "";
+  return `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
 }
 
 function formatTimestamp(timestamp, granularity) {
