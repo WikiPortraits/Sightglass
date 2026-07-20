@@ -165,6 +165,7 @@
   "api.monthlyNeedsFullMonth": "Monthly granularity requires a date range that includes at least one full calendar month.",
   "results.docTitle": "Job Results - Wikimedia Sightglass",
   "results.loading": "Loading query results…",
+  "results.loadingResults": "Loading results…",
   "results.mediaViewsFor": "Media views for Category:",
   "results.cancelJob": "Cancel Job",
   "results.cancelling": "Cancelling...",

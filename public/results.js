@@ -17,6 +17,7 @@ let chartResizeRaf = null;
 const FILES_PAGE_SIZE = 50;
 let currentResult = null;
 let currentJobParameters = null;
+let resultPrefetch = null;
 let paginatedFiles = [];
 let renderedFileCount = 0;
 let fileListScrollHandlerAttached = false;
@@ -115,6 +116,10 @@ if (document.readyState === "loading") {
 }
 
 async function initPage() {
+  if (jobId) {
+    // Start results download
+    resultPrefetch = fetch(`/api/jobs/${jobId}/result`).catch(() => null);
+  }
   // t() needs the catalog loaded
   await MediaViewI18n.ready;
   MediaViewCommon.initTheme(refreshChartThemes);
@@ -672,8 +677,17 @@ async function loadJobResult(job) {
   if (resultFetchStarted) return;
   resultFetchStarted = true;
 
+  const loadingIndicator = document.getElementById("result-loading");
+  if (loadingIndicator) loadingIndicator.style.display = "block";
+
   try {
-    const response = await fetch(`/api/jobs/${jobId}/result`);
+    // The prefetch 404s when the job finished after page load; refetch then
+    const prefetched = resultPrefetch ? await resultPrefetch : null;
+    resultPrefetch = null;
+    const response =
+      prefetched && prefetched.ok
+        ? prefetched
+        : await fetch(`/api/jobs/${jobId}/result`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -690,6 +704,8 @@ async function loadJobResult(job) {
     resultFetchStarted = false;
     console.error("Failed to load job result:", error);
     showJobError(t("results.unableToLoad"), t("results.resultLoadFailed"));
+  } finally {
+    if (loadingIndicator) loadingIndicator.style.display = "none";
   }
 }
 
