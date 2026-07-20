@@ -203,7 +203,7 @@
   "results.gatheringFiles": "Gathering the list of files in this category...",
   "results.metaDateRange": "Date range",
   "results.metaGranularity": "Granularity",
-  "results.metaDepth": "Subcategory depth",
+  "results.metaDepth": "Subcat depth",
   "results.metaReferer": "Referer",
   "results.metaAgent": "Agent",
   "results.metaQueued": "Queued",
