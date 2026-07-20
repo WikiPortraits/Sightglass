@@ -949,6 +949,12 @@
     justify-content: flex-start;
   }
 
+  .file-item-attribution {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
+
   /* Narrow screens: keep name, bar, and views; the rest is in the tooltip */
   .tree-meta,
   .tree-share {
@@ -1025,5 +1031,21 @@
   .tree-name {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  /* Stack file rows: info on top, then count, label, and toggle right */
+  .file-item-main {
+    flex-basis: 100%;
+  }
+
+  .file-item-views {
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    margin-left: auto;
+    min-width: 0;
+    flex-shrink: 1;
   }
 }
