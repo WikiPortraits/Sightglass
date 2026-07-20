@@ -315,7 +315,7 @@
   "stats.categoriesQueried": "Root categories queried",
   "stats.categoriesScanned": "Categories scanned",
   "stats.processingTime": "Processing time",
-  "stats.fileLookups": "File lookups",
+  "stats.fileLookups": "Individual file lookups",
   "stats.usersServed": "Users served",
   "stats.durationMinutes": "$1 {{PLURAL:$1|minute|minutes}}",
   "stats.durationHours": "$1 {{PLURAL:$1|hour|hours}}",
