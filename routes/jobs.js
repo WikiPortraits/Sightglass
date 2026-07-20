@@ -19,6 +19,7 @@ const {
   isJobSavedBy,
   cancelJob,
   getJobData,
+  getLifetimeStats,
   JOB_RETENTION_DAYS,
   JOB_UNSAVE_GRACE_DAYS,
 } = require("../db");
@@ -162,6 +163,24 @@ router.get(
     }
   },
 );
+
+/**
+ * Lifetime processing totals
+ * GET /api/stats
+ *
+ * Authentication: Not required (shown on the public /stats page)
+ */
+router.get("/api/stats", apiLimiter, (req, res) => {
+  try {
+    res.json(getLifetimeStats());
+  } catch (error) {
+    console.error("Error fetching lifetime stats:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      message: "Failed to fetch stats",
+    });
+  }
+});
 
 /**
  * Jobs saved by the current user

@@ -1,0 +1,45 @@
+/* Stats page */
+
+.stats-page {
+  display: flex;
+  flex-direction: column;
+  max-width: var(--max-width-prose);
+}
+
+.stats-intro h2 {
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: var(--font-size-3xl);
+  color: var(--text-color);
+}
+
+/* Ledger: label left, value right, hairline dividers */
+.stats-list {
+  max-width: 30rem;
+  margin: var(--spacing-lg) 0;
+}
+
+.stats-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-sm) 0;
+  border-bottom: var(--border-width) solid var(--border-color);
+}
+
+.stats-row:last-child {
+  border-bottom: none;
+}
+
+.stats-row dt {
+  color: var(--text-muted);
+}
+
+.stats-row dd {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-color);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

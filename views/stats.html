@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    {{head}}
+    <title data-i18n="stats.docTitle">Statistics - Wikimedia Sightglass</title>
+    <link rel="stylesheet" href="/styles/stats.css" />
+  </head>
+
+  <body>
+    {{header}}
+
+    <main class="container stats-page">
+      <section class="stats-intro">
+        <h2 data-i18n="stats.heading">Statistics</h2>
+        <p data-i18n="stats.intro">
+          Lifetime totals for all queries run on Sightglass.
+        </p>
+      </section>
+
+      <div
+        id="stats-error"
+        class="error-message"
+        role="alert"
+        style="display: none"
+      ></div>
+
+      <dl class="stats-list">
+        <div class="stats-row">
+          <dt data-i18n="stats.queriesCompleted">Queries completed</dt>
+          <dd id="stat-queries">—</dd>
+        </div>
+        <div class="stats-row">
+          <dt data-i18n="stats.filesAnalyzed">Files analyzed</dt>
+          <dd id="stat-files">—</dd>
+        </div>
+        <div class="stats-row">
+          <dt data-i18n="stats.viewsCounted">Views counted</dt>
+          <dd id="stat-views">—</dd>
+        </div>
+        <div class="stats-row">
+          <dt data-i18n="stats.categoriesQueried">Root categories queried</dt>
+          <dd id="stat-categories">—</dd>
+        </div>
+        <div class="stats-row">
+          <dt data-i18n="stats.categoriesScanned">Categories scanned</dt>
+          <dd id="stat-cats-scanned">—</dd>
+        </div>
+        <div class="stats-row">
+          <dt data-i18n="stats.processingTime">Processing time</dt>
+          <dd id="stat-processing">—</dd>
+        </div>
+        <div class="stats-row">
+          <dt data-i18n="stats.fileLookups">File lookups</dt>
+          <dd id="stat-lookups">—</dd>
+        </div>
+        <div class="stats-row">
+          <dt data-i18n="stats.usersServed">Users served</dt>
+          <dd id="stat-users">—</dd>
+        </div>
+      </dl>
+    </main>
+
+    {{footer}}
+
+    <script src="/common.js"></script>
+    <script src="/stats.js"></script>
+  </body>
+</html>

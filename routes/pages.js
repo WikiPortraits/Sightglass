@@ -40,6 +40,10 @@ router.get("/info", (req, res) => {
   renderView(res, "info.html");
 });
 
+router.get("/stats", (req, res) => {
+  renderView(res, "stats.html");
+});
+
 router.get("/privacy", (req, res) => {
   renderView(res, "privacy.html");
 });

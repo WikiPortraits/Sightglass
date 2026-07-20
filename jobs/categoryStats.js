@@ -758,6 +758,7 @@ async function categoryStatsHandler(jobId, parameters, progressCallback) {
   return {
     category: categoryName,
     fileCount: files.length,
+    categoriesScanned: categoryTree.nodes.length,
     filesProcessed: successCount,
     filesWithErrors: errorCount,
     totalViews,

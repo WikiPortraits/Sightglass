@@ -3,7 +3,11 @@ const router = express.Router();
 const crypto = require("crypto");
 const { requireAuth } = require("../middleware/auth");
 const { apiLimiter } = require("../middleware/rateLimit");
-const { createJob, countUserPendingJobs } = require("../db");
+const {
+  createJob,
+  countUserPendingJobs,
+  recordFileLookup,
+} = require("../db");
 const { enqueueJob } = require("../jobs/processor");
 const {
   validateStatsParams,
@@ -115,6 +119,8 @@ router.get("/api/media/stats", requireAuth, apiLimiter, async (req, res) => {
     }
 
     const data = await response.json();
+
+    recordFileLookup();
 
     res.json({
       ...data,

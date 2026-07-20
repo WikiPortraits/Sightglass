@@ -140,6 +140,19 @@ Parameters:
 - `category` (required) - Category name
 - `depth` (optional) - Subcategory depth 0-10 (default: 0)
 
+### Lifetime Statistics
+
+```
+GET /api/stats
+```
+
+**Authentication**: Not required (shown on the public `/stats` page)
+
+Returns lifetime totals: queries completed, files analyzed, views counted,
+distinct categories queried, categories scanned (subcategories included),
+processing time, single-file lookups, and users served. These counters
+persist after old jobs are deleted.
+
 ### Session Status
 
 ```

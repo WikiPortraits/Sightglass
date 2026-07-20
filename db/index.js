@@ -12,8 +12,7 @@ const JOB_RETENTION_DAYS = Math.max(
   parseInt(process.env.JOB_RETENTION_DAYS, 10) || 30,
 );
 
-// After a job's last save is removed, cleanup waits this many more days
-// so accidental unsaves is recoverable by re-saving
+// Extra days after the last unsave before cleanup may delete the job
 const JOB_UNSAVE_GRACE_DAYS = Math.max(
   1,
   parseInt(process.env.JOB_UNSAVE_GRACE_DAYS, 10) || 7,
@@ -53,8 +52,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id);
 `);
 
-// Total result view count, denormalized so job listings never have to
-// gunzip the stored result payload
+// Denormalized total views, so job listings don't gunzip results
 const jobColumns = db
   .prepare("PRAGMA table_info(jobs)")
   .all()
@@ -63,7 +61,6 @@ if (!jobColumns.includes("total_views")) {
   db.exec("ALTER TABLE jobs ADD COLUMN total_views INTEGER");
 }
 
-// Job saves
 // Multiple users can save a job
 db.exec(`
   CREATE TABLE IF NOT EXISTS job_saves (
@@ -84,6 +81,28 @@ db.exec(`
     key TEXT NOT NULL,
     data TEXT NOT NULL,
     PRIMARY KEY (job_id, key)
+  )
+`);
+
+// Lifetime counters; bumped at completion, survive job cleanup
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lifetime_stats (
+    key TEXT PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0
+  )
+`);
+
+// Every user who has created a job; outlives the jobs
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lifetime_users (
+    user_id TEXT PRIMARY KEY
+  )
+`);
+
+// Root categories of completed queries, normalized
+db.exec(`
+  CREATE TABLE IF NOT EXISTS lifetime_categories (
+    category TEXT PRIMARY KEY
   )
 `);
 
@@ -112,7 +131,7 @@ const statements = {
 
   startJob: db.prepare(`
     UPDATE jobs
-    SET status = 'running', started_at = ?
+    SET status = 'running', started_at = COALESCE(started_at, ?)
     WHERE id = ? AND status = 'pending'
   `),
 
@@ -227,9 +246,10 @@ const statements = {
       AND (unsaved_at IS NULL OR unsaved_at < ?)
   `),
 
+  // started_at survives, so processing time spans first start to completion
   resetStaleRunningJobs: db.prepare(`
     UPDATE jobs
-    SET status = 'pending', started_at = NULL
+    SET status = 'pending'
     WHERE status = 'running'
   `),
 
@@ -282,10 +302,50 @@ const statements = {
     DELETE FROM job_saves
     WHERE job_id NOT IN (SELECT id FROM jobs)
   `),
+
+  bumpLifetimeStat: db.prepare(`
+    INSERT INTO lifetime_stats (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = value + excluded.value
+  `),
+
+  getLifetimeStats: db.prepare(`
+    SELECT key, value FROM lifetime_stats
+  `),
+
+  recordLifetimeUser: db.prepare(`
+    INSERT OR IGNORE INTO lifetime_users (user_id) VALUES (?)
+  `),
+
+  countLifetimeUsers: db.prepare(`
+    SELECT COUNT(*) AS count FROM lifetime_users
+  `),
+
+  recordLifetimeCategory: db.prepare(`
+    INSERT OR IGNORE INTO lifetime_categories (category) VALUES (?)
+  `),
+
+  countLifetimeCategories: db.prepare(`
+    SELECT COUNT(*) AS count FROM lifetime_categories
+  `),
+
+  getJobStartedAt: db.prepare(`
+    SELECT started_at FROM jobs WHERE id = ?
+  `),
 };
 
-// Backfill total_views for jobs completed before the column existed;
-// each row is attempted once per startup until it parses
+// Fold underscores and first-letter case (MediaWiki title rules)
+// so the same category counts once
+function normalizeCategoryName(name) {
+  const clean = String(name || "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return null;
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
+}
+
+// Backfill total_views for jobs that predate the column;
+// retried each startup until the row parses
 (function backfillTotalViews() {
   const rows = db
     .prepare(
@@ -308,16 +368,95 @@ const statements = {
   }
 })();
 
+// One-time seed of lifetime totals from surviving jobs;
+// the 'seeded' marker prevents re-runs
+(function seedLifetimeStats() {
+  const seeded = db
+    .prepare("SELECT 1 FROM lifetime_stats WHERE key = 'seeded'")
+    .get();
+  if (seeded) return;
+
+  const totals = db
+    .prepare(
+      `SELECT COUNT(*) AS jobs,
+              COALESCE(SUM(total_views), 0) AS views
+       FROM jobs WHERE status = 'completed'`,
+    )
+    .get();
+  const owners = db
+    .prepare("SELECT DISTINCT owner_id FROM jobs WHERE owner_id IS NOT NULL")
+    .all();
+  const rows = db
+    .prepare(
+      `SELECT parameters, result, started_at, completed_at
+       FROM jobs WHERE status = 'completed'`,
+    )
+    .all();
+
+  const categories = new Set();
+  let filesAnalyzed = 0;
+  let categoriesScanned = 0;
+  let processingMs = 0;
+  for (const row of rows) {
+    try {
+      const category = normalizeCategoryName(
+        JSON.parse(row.parameters)?.category,
+      );
+      if (category) categories.add(category);
+    } catch {
+      /* unparseable parameters: skip */
+    }
+    if (row.started_at && row.completed_at > row.started_at) {
+      processingMs += row.completed_at - row.started_at;
+    }
+    if (row.result) {
+      try {
+        const result = JSON.parse(zlib.gunzipSync(row.result).toString());
+        const fileCount = Number(result?.fileCount);
+        if (Number.isFinite(fileCount)) {
+          filesAnalyzed += fileCount;
+        }
+        const scanned = Number(result?.categoriesScanned);
+        // Older results lack the count; their stored tree drops empty
+        // categories, so its length is a floor
+        const fallback = Array.isArray(result?.categoryTree)
+          ? result.categoryTree.length
+          : 0;
+        categoriesScanned += Number.isFinite(scanned) ? scanned : fallback;
+      } catch {
+        /* unreadable result: skip */
+      }
+    }
+  }
+
+  db.transaction(() => {
+    statements.bumpLifetimeStat.run("jobs_completed", totals.jobs);
+    statements.bumpLifetimeStat.run("files_analyzed", filesAnalyzed);
+    statements.bumpLifetimeStat.run("views_counted", totals.views);
+    statements.bumpLifetimeStat.run("categories_scanned", categoriesScanned);
+    statements.bumpLifetimeStat.run("processing_ms", processingMs);
+    statements.bumpLifetimeStat.run("seeded", 1);
+    for (const row of owners) {
+      statements.recordLifetimeUser.run(row.owner_id);
+    }
+    for (const category of categories) {
+      statements.recordLifetimeCategory.run(category);
+    }
+  })();
+})();
+
+const createJobTx = db.transaction(
+  (id, type, ownerId, username, parameters, now) => {
+    statements.createJob.run(id, type, ownerId, username, parameters, now);
+    if (ownerId) {
+      statements.recordLifetimeUser.run(ownerId);
+    }
+  },
+);
+
 function createJob(id, type, ownerId, username, parameters) {
   const now = Date.now();
-  statements.createJob.run(
-    id,
-    type,
-    ownerId,
-    username,
-    JSON.stringify(parameters),
-    now,
-  );
+  createJobTx(id, type, ownerId, username, JSON.stringify(parameters), now);
   return id;
 }
 
@@ -346,8 +485,7 @@ function getJobInfo(id) {
   return { ...job, parameters: JSON.parse(job.parameters) };
 }
 
-// Stored result as-is (gzipped JSON Buffer)
-// null if absent or job missing
+// Stored result as-is (gzipped JSON Buffer); null if absent
 function getJobResultRaw(id) {
   const row = statements.getJobResult.get(id);
   return row ? row.result : null;
@@ -363,19 +501,49 @@ function updateJobProgress(id, progress, total) {
   statements.updateJobProgress.run(progress, total, id);
 }
 
-// Results are stored gzipped; getJob unzips on read
+// Result is stored gzipped; totals bump in the same transaction
+// so a crash can't lose or double-count a job
+const completeJobTx = db.transaction(
+  (id, blob, totalViews, fileCount, categoriesScanned, category, now) => {
+    const started = statements.getJobStartedAt.get(id)?.started_at;
+    const updated = statements.completeJob.run(blob, totalViews, now, id);
+    if (updated.changes === 0) return;
+    statements.bumpLifetimeStat.run("jobs_completed", 1);
+    if (fileCount > 0) {
+      statements.bumpLifetimeStat.run("files_analyzed", fileCount);
+    }
+    if (totalViews > 0) {
+      statements.bumpLifetimeStat.run("views_counted", totalViews);
+    }
+    if (categoriesScanned > 0) {
+      statements.bumpLifetimeStat.run("categories_scanned", categoriesScanned);
+    }
+    if (started && now > started) {
+      statements.bumpLifetimeStat.run("processing_ms", now - started);
+    }
+    if (category) {
+      statements.recordLifetimeCategory.run(category);
+    }
+  },
+);
+
 function completeJob(id, result) {
   const now = Date.now();
   const totalViews = Number(result?.totalViews);
-  statements.completeJob.run(
+  const fileCount = Number(result?.fileCount);
+  const categoriesScanned = Number(result?.categoriesScanned);
+  completeJobTx(
+    id,
     zlib.gzipSync(JSON.stringify(result)),
     Number.isFinite(totalViews) ? totalViews : null,
+    Number.isFinite(fileCount) ? fileCount : 0,
+    Number.isFinite(categoriesScanned) ? categoriesScanned : 0,
+    normalizeCategoryName(result?.category),
     now,
-    id,
   );
 }
 
-// Errors carrying an i18n key are stored as JSON {message, key, params}
+// Errors with an i18n key are stored as JSON {message, key, params}
 // so the results page can translate them; plain strings stay as-is
 function failJob(id, error) {
   const now = Date.now();
@@ -414,8 +582,6 @@ function getAllJobs(limit = 200) {
   }));
 }
 
-// scope: all | mine | others
-// is_saved reflects the requesting user's own save
 function getSavedJobsForUser(userId, limit = 50) {
   const jobs = statements.getSavedJobsForUser.all(userId, userId, limit);
 
@@ -547,6 +713,28 @@ function getJobData(jobId, key) {
   return row ? row.data : null;
 }
 
+// One successful GET /api/media/stats lookup
+function recordFileLookup() {
+  statements.bumpLifetimeStat.run("file_lookups", 1);
+}
+
+// Lifetime totals for the public stats page
+function getLifetimeStats() {
+  const byKey = new Map(
+    statements.getLifetimeStats.all().map((row) => [row.key, row.value]),
+  );
+  return {
+    jobsCompleted: byKey.get("jobs_completed") || 0,
+    filesAnalyzed: byKey.get("files_analyzed") || 0,
+    viewsCounted: byKey.get("views_counted") || 0,
+    categoriesScanned: byKey.get("categories_scanned") || 0,
+    processingMs: byKey.get("processing_ms") || 0,
+    fileLookups: byKey.get("file_lookups") || 0,
+    categoriesQueried: statements.countLifetimeCategories.get().count,
+    usersServed: statements.countLifetimeUsers.get().count,
+  };
+}
+
 // After server restart, requeue orphaned running jobs
 function resetStaleRunningJobs() {
   const result = statements.resetStaleRunningJobs.run();
@@ -588,4 +776,6 @@ module.exports = {
   copyJobDataChunk,
   clearJobCheckpoints,
   getJobData,
+  getLifetimeStats,
+  recordFileLookup,
 };
