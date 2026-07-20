@@ -255,6 +255,24 @@ p:first-child {
   text-decoration: none;
 }
 
+.header-title h1 {
+  margin: 0.25rem 0 0;
+}
+
+.header-byline {
+  margin: 0 0 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.header-byline a {
+  color: inherit;
+}
+
+.header-byline a:hover {
+  color: var(--primary-color);
+}
+
 #nav-container {
   display: flex;
   gap: var(--spacing-md);

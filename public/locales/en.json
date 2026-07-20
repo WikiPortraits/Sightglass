@@ -1,5 +1,6 @@
 {
   "app.name": "Wikimedia Sightglass",
+  "header.byline": "A mediacounts tool from <a href=\"https://wikiportraits.org\" target=\"_blank\" rel=\"noopener\">WikiPortraits</a>",
   "lang.label": "Language",
   "nav.info": "Info",
   "nav.logout": "Logout",
