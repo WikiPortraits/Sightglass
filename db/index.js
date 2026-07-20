@@ -9,7 +9,7 @@ const DB_FILE = path.join(DB_DIR, "jobs.db");
 // Unsaved jobs are deleted after this many days
 const JOB_RETENTION_DAYS = Math.max(
   1,
-  parseInt(process.env.JOB_RETENTION_DAYS, 10) || 30,
+  parseInt(process.env.JOB_RETENTION_DAYS, 10) || 7,
 );
 
 // Extra days after the last unsave before cleanup may delete the job
