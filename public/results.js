@@ -591,6 +591,12 @@ function updateJobDisplay(job) {
           : t("granularity.daily"),
     });
   }
+  if (p.depth !== undefined) {
+    metaItems.push({
+      label: t("results.metaDepth"),
+      value: String(p.depth),
+    });
+  }
   if (p.referer && p.referer !== "all-referers") {
     metaItems.push({ label: t("results.metaReferer"), value: p.referer });
   }

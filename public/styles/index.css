@@ -546,9 +546,7 @@
 
   /* Column priority */
   #jobs-table .col-granularity,
-  #jobs-table .col-depth,
-  #jobs-table .granularity-cell,
-  #jobs-table .depth-cell {
+  #jobs-table .granularity-cell {
     display: none;
   }
 
