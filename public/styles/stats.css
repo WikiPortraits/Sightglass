@@ -14,7 +14,6 @@
 
 /* Ledger: label left, value right, hairline dividers */
 .stats-list {
-  max-width: 30rem;
   margin: var(--spacing-lg) 0;
 }
 
