@@ -49,7 +49,7 @@
         <section id="file-tab" class="tab-content active">
           <section class="search-section">
             <p class="subtitle" data-i18n="query.fileSubtitle">
-              Enter a filename from Wikimedia Commons to see its view statistics
+              Enter a filename from Wikimedia Commons to see its request statistics
               over time.
             </p>
 
@@ -227,15 +227,15 @@
 
             <div class="stats-summary">
               <div class="stat-card">
-                <h4 data-i18n="query.totalViews">Total Views</h4>
+                <h4 data-i18n="query.totalViews">Total Media Requests</h4>
                 <p id="total-views" class="stat-value">-</p>
               </div>
               <div class="stat-card">
-                <h4 data-i18n="query.avgViewsDay">Average Views/Day</h4>
+                <h4 data-i18n="query.avgViewsDay">Average Requests/Day</h4>
                 <p id="avg-views" class="stat-value">-</p>
               </div>
               <div class="stat-card">
-                <h4 data-i18n="query.peakViews">Peak Views</h4>
+                <h4 data-i18n="query.peakViews">Peak Requests</h4>
                 <p id="peak-views" class="stat-value">-</p>
               </div>
               <div class="stat-card">
@@ -245,11 +245,11 @@
             </div>
 
             <div class="chart-container">
-              <h4 data-i18n="query.viewsOverTime">Views Over Time</h4>
+              <h4 data-i18n="query.viewsOverTime">Media Requests Over Time</h4>
               <canvas
                 id="views-chart"
                 role="img"
-                aria-label="Line chart of views over time"
+                aria-label="Line chart of media requests over time"
                 data-i18n-aria-label="query.chartAria"
               ></canvas>
             </div>
@@ -270,7 +270,7 @@
                   <thead>
                     <tr>
                       <th data-i18n="query.colDate">Date</th>
-                      <th data-i18n="query.colTotalViews">Total Views</th>
+                      <th data-i18n="query.colTotalViews">Media Requests</th>
                     </tr>
                   </thead>
                   <tbody id="data-table-body"></tbody>

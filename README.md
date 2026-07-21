@@ -148,7 +148,7 @@ GET /api/stats
 
 **Authentication**: Not required (shown on the public `/stats` page)
 
-Returns lifetime totals: queries completed, files analyzed, views counted,
+Returns lifetime totals: queries completed, files analyzed, media requests counted,
 distinct categories queried, categories scanned (subcategories included),
 processing time, single-file lookups, and users served. These counters
 persist after old jobs are deleted.
