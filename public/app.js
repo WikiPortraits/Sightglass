@@ -571,12 +571,9 @@ async function handleCancelJob(button) {
   }
 }
 
-// 30-day window ending 2 days back; mediacounts lags, so today would 404
+// 12 months ending 2 days back; mediacounts lags, so today would 404
 function setDefaultDates() {
-  const endDate = new Date();
-  endDate.setDate(endDate.getDate() - 2);
-  const startDate = new Date(endDate);
-  startDate.setDate(startDate.getDate() - 30);
+  const { start: startDate, end: endDate } = getPresetRange("1y");
 
   // File analysis tab
   const fileEndDate = document.getElementById("end-date");
@@ -589,6 +586,10 @@ function setDefaultDates() {
   const categoryStartDate = document.getElementById("category-start-date");
   if (categoryEndDate) categoryEndDate.valueAsDate = endDate;
   if (categoryStartDate) categoryStartDate.valueAsDate = startDate;
+
+  // Highlight the preset matching the default range
+  setActivePreset(document.getElementById("date-presets"), "1y");
+  setActivePreset(document.getElementById("category-date-presets"), "1y");
 }
 
 function setupEventListeners() {
@@ -666,6 +667,22 @@ function setupEventListeners() {
     "category-end-date",
   );
 
+  // Date range preset buttons (both tabs)
+  setupDatePresets("date-presets", "start-date", "end-date");
+  setupDatePresets(
+    "category-date-presets",
+    "category-start-date",
+    "category-end-date",
+  );
+
+  // Dates before available data get raised to DATA_START
+  ["start-date", "end-date", "category-start-date", "category-end-date"].forEach(
+    (id) => {
+      const input = document.getElementById(id);
+      if (input) input.addEventListener("blur", () => clampToDataStart(input));
+    },
+  );
+
   // Show more button (file analysis table)
   const dataTableShowMoreBtn = document.getElementById(
     "data-table-show-more-btn",
@@ -714,6 +731,66 @@ function setupGranularityToggle(selectId, startId, endId) {
       startInput.value = startValue;
       endInput.value = endValue;
     }
+  });
+}
+
+// No mediacounts data exists before this date
+const DATA_START = "2015-01-01";
+
+// Raise a date/month input to DATA_START
+function clampToDataStart(input) {
+  if (!input || !input.value) return;
+  const floor =
+    input.type === "month" ? DATA_START.substring(0, 7) : DATA_START;
+  if (input.value < floor) input.value = floor;
+}
+
+// Ranges end 2 days back like the defaults; mediacounts data starts 2015
+function getPresetRange(range) {
+  const end = new Date();
+  end.setDate(end.getDate() - 2);
+  let start = new Date(end);
+  if (range === "30d") {
+    start.setDate(start.getDate() - 30);
+  } else if (range === "90d") {
+    start.setDate(start.getDate() - 90);
+  } else if (range === "1y") {
+    start.setFullYear(start.getFullYear() - 1);
+  } else {
+    // Date-only ISO strings parse as UTC, which valueAsDate expects
+    start = new Date(DATA_START);
+  }
+  return { start, end };
+}
+
+function setActivePreset(container, range) {
+  if (!container) return;
+  container.querySelectorAll(".date-preset").forEach((button) => {
+    const isActive = button.dataset.range === range;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+}
+
+function setupDatePresets(containerId, startId, endId) {
+  const container = document.getElementById(containerId);
+  const startInput = document.getElementById(startId);
+  const endInput = document.getElementById(endId);
+  if (!container || !startInput || !endInput) return;
+
+  container.querySelectorAll(".date-preset").forEach((button) => {
+    button.addEventListener("click", () => {
+      const { start, end } = getPresetRange(button.dataset.range);
+      // valueAsDate handles both date and month input types
+      startInput.valueAsDate = start;
+      endInput.valueAsDate = end;
+      setActivePreset(container, button.dataset.range);
+    });
+  });
+
+  // Drop highlights on custom range
+  [startInput, endInput].forEach((input) => {
+    input.addEventListener("input", () => setActivePreset(container, null));
   });
 }
 
@@ -944,6 +1021,9 @@ function getLastDayOfMonth(yearMonth) {
 }
 
 async function handleSearch() {
+  clampToDataStart(document.getElementById("start-date"));
+  clampToDataStart(document.getElementById("end-date"));
+
   const filename = document.getElementById("filename-input").value.trim();
   const startDate = document.getElementById("start-date").value;
   const endDate = document.getElementById("end-date").value;
@@ -1032,8 +1112,8 @@ function displayResults(data) {
     return;
   }
 
-  // AQS omits zero-request periods; fill them so the average, chart,
-  // and CSV cover the full range
+  // Zero-fill so the average, chart, and CSV cover the whole queried range
+  // (AQS omits zero-request periods)
   data.items = MediaViewCommon.zeroFillTimeline(
     data.items,
     data.metadata.startDate,
@@ -1368,6 +1448,9 @@ function displayCategorySuggestions(categories) {
 }
 
 async function handleCategorySearch() {
+  clampToDataStart(document.getElementById("category-start-date"));
+  clampToDataStart(document.getElementById("category-end-date"));
+
   const category = document.getElementById("category-input").value.trim();
   const startDate = document.getElementById("category-start-date").value;
   const endDate = document.getElementById("category-end-date").value;

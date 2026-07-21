@@ -49,8 +49,8 @@
         <section id="file-tab" class="tab-content active">
           <section class="search-section">
             <p class="subtitle" data-i18n="query.fileSubtitle">
-              Enter a filename from Wikimedia Commons to see its request statistics
-              over time.
+              Enter a filename from Wikimedia Commons to see its request
+              statistics over time.
             </p>
 
             <div class="search-form">
@@ -84,21 +84,47 @@
                 <h3 class="form-section-title" data-i18n="query.timeSection">
                   Time
                 </h3>
+                <div
+                  class="date-presets"
+                  id="date-presets"
+                  role="group"
+                  aria-label="Date range presets"
+                  data-i18n-aria-label="query.datePresetsAria"
+                >
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="30d"
+                    data-i18n="query.presetLast30Days"
+                  >
+                    Last 30 days
+                  </button>
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="90d"
+                    data-i18n="query.presetLast90Days"
+                  >
+                    Last 90 days
+                  </button>
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="1y"
+                    data-i18n="query.presetLast12Months"
+                  >
+                    Last 12 months
+                  </button>
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="all"
+                    data-i18n="query.presetAllTime"
+                  >
+                    All time (since 2015)
+                  </button>
+                </div>
                 <div class="options-group">
-                  <div class="input-group">
-                    <label for="granularity" data-i18n="query.granularityLabel"
-                      >Granularity:</label
-                    >
-                    <select id="granularity">
-                      <option value="daily" data-i18n="granularity.daily">
-                        Daily
-                      </option>
-                      <option value="monthly" data-i18n="granularity.monthly">
-                        Monthly
-                      </option>
-                    </select>
-                  </div>
-
                   <div class="input-group">
                     <label for="start-date" data-i18n="query.startDateLabel"
                       >Start Date:</label
@@ -111,6 +137,21 @@
                       >End Date:</label
                     >
                     <input type="date" id="end-date" />
+                  </div>
+                </div>
+                <div class="options-group options-group-narrow">
+                  <div class="input-group">
+                    <label for="granularity" data-i18n="query.granularityLabel"
+                      >Granularity:</label
+                    >
+                    <select id="granularity">
+                      <option value="daily" data-i18n="granularity.daily">
+                        Daily
+                      </option>
+                      <option value="monthly" data-i18n="granularity.monthly">
+                        Monthly
+                      </option>
+                    </select>
                   </div>
                 </div>
               </div>
@@ -307,8 +348,8 @@
         <section id="category-tab" class="tab-content">
           <section class="search-section">
             <p class="subtitle" data-i18n="query.categorySubtitle">
-              Analyze all media files in a Commons category. Get aggregate
-              statistics and per-file breakdown.
+              Analyze all media files in a Commons category tree, up to 300,000
+              files.
             </p>
 
             <div class="search-form">
@@ -365,23 +406,47 @@
                 <h3 class="form-section-title" data-i18n="query.timeSection">
                   Time
                 </h3>
+                <div
+                  class="date-presets"
+                  id="category-date-presets"
+                  role="group"
+                  aria-label="Date range presets"
+                  data-i18n-aria-label="query.datePresetsAria"
+                >
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="30d"
+                    data-i18n="query.presetLast30Days"
+                  >
+                    Last 30 days
+                  </button>
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="90d"
+                    data-i18n="query.presetLast90Days"
+                  >
+                    Last 90 days
+                  </button>
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="1y"
+                    data-i18n="query.presetLast12Months"
+                  >
+                    Last 12 months
+                  </button>
+                  <button
+                    type="button"
+                    class="date-preset"
+                    data-range="all"
+                    data-i18n="query.presetAllTime"
+                  >
+                    All time (since 2015)
+                  </button>
+                </div>
                 <div class="options-group">
-                  <div class="input-group">
-                    <label
-                      for="category-granularity"
-                      data-i18n="query.granularityLabel"
-                      >Granularity:</label
-                    >
-                    <select id="category-granularity">
-                      <option value="daily" data-i18n="granularity.daily">
-                        Daily
-                      </option>
-                      <option value="monthly" data-i18n="granularity.monthly">
-                        Monthly
-                      </option>
-                    </select>
-                  </div>
-
                   <div class="input-group">
                     <label
                       for="category-start-date"
@@ -398,6 +463,23 @@
                       >End Date:</label
                     >
                     <input type="date" id="category-end-date" />
+                  </div>
+                </div>
+                <div class="options-group options-group-narrow">
+                  <div class="input-group">
+                    <label
+                      for="category-granularity"
+                      data-i18n="query.granularityLabel"
+                      >Granularity:</label
+                    >
+                    <select id="category-granularity">
+                      <option value="daily" data-i18n="granularity.daily">
+                        Daily
+                      </option>
+                      <option value="monthly" data-i18n="granularity.monthly">
+                        Monthly
+                      </option>
+                    </select>
                   </div>
                 </div>
               </div>
