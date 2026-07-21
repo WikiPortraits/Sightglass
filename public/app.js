@@ -571,25 +571,20 @@ async function handleCancelJob(button) {
   }
 }
 
-// 12 months ending 2 days back; mediacounts lags, so today would 404
+// The last 12 full months; the current month is incomplete
 function setDefaultDates() {
-  const { start: startDate, end: endDate } = getPresetRange("1y");
-
-  // File analysis tab
-  const fileEndDate = document.getElementById("end-date");
-  const fileStartDate = document.getElementById("start-date");
-  if (fileEndDate) fileEndDate.valueAsDate = endDate;
-  if (fileStartDate) fileStartDate.valueAsDate = startDate;
-
-  // Category analysis tab
-  const categoryEndDate = document.getElementById("category-end-date");
-  const categoryStartDate = document.getElementById("category-start-date");
-  if (categoryEndDate) categoryEndDate.valueAsDate = endDate;
-  if (categoryStartDate) categoryStartDate.valueAsDate = startDate;
-
-  // Highlight the preset matching the default range
-  setActivePreset(document.getElementById("date-presets"), "1y");
-  setActivePreset(document.getElementById("category-date-presets"), "1y");
+  applyPreset(
+    document.getElementById("date-presets"),
+    document.getElementById("start-date"),
+    document.getElementById("end-date"),
+    "1y",
+  );
+  applyPreset(
+    document.getElementById("category-date-presets"),
+    document.getElementById("category-start-date"),
+    document.getElementById("category-end-date"),
+    "1y",
+  );
 }
 
 function setupEventListeners() {
@@ -660,11 +655,12 @@ function setupEventListeners() {
   setupCustomRefererToggle("category-referer", "category-custom-referer-group");
 
   // Date input type switching on granularity change (both tabs)
-  setupGranularityToggle("granularity", "start-date", "end-date");
+  setupGranularityToggle("granularity", "start-date", "end-date", "date-presets");
   setupGranularityToggle(
     "category-granularity",
     "category-start-date",
     "category-end-date",
+    "category-date-presets",
   );
 
   // Date range preset buttons (both tabs)
@@ -707,7 +703,7 @@ function setupCustomRefererToggle(selectId, groupId) {
 }
 
 // Swap date inputs between date and month pickers, carrying the value
-function setupGranularityToggle(selectId, startId, endId) {
+function setupGranularityToggle(selectId, startId, endId, presetsId) {
   const select = document.getElementById(selectId);
   const startInput = document.getElementById(startId);
   const endInput = document.getElementById(endId);
@@ -731,36 +727,71 @@ function setupGranularityToggle(selectId, startId, endId) {
       startInput.value = startValue;
       endInput.value = endValue;
     }
+
+    // Recompute preset range for updated granularity
+    const container = document.getElementById(presetsId);
+    const active = container?.querySelector(".date-preset.active");
+    if (active) {
+      applyPreset(container, startInput, endInput, active.dataset.range);
+    }
   });
 }
 
 // No mediacounts data exists before this date
 const DATA_START = "2015-01-01";
 
+// True for a month input even where the browser falls back to text
+function isMonthInput(input) {
+  return input.getAttribute("type") === "month";
+}
+
 // Raise a date/month input to DATA_START
 function clampToDataStart(input) {
   if (!input || !input.value) return;
-  const floor =
-    input.type === "month" ? DATA_START.substring(0, 7) : DATA_START;
+  const floor = isMonthInput(input)
+    ? DATA_START.substring(0, 7)
+    : DATA_START;
   if (input.value < floor) input.value = floor;
 }
 
-// Ranges end 2 days back like the defaults; mediacounts data starts 2015
-function getPresetRange(range) {
+// Monthly presets cover whole calendar months and skip current incomplete month
+function getPresetRange(range, monthly) {
   const end = new Date();
-  end.setDate(end.getDate() - 2);
-  let start = new Date(end);
-  if (range === "30d") {
-    start.setDate(start.getDate() - 30);
-  } else if (range === "90d") {
-    start.setDate(start.getDate() - 90);
-  } else if (range === "1y") {
-    start.setFullYear(start.getFullYear() - 1);
+  let start;
+  if (monthly) {
+    end.setDate(0); // last day of the previous month
+    if (range === "1m") {
+      start = new Date(end.getFullYear(), end.getMonth(), 1);
+    } else if (range === "3m") {
+      start = new Date(end.getFullYear(), end.getMonth() - 2, 1);
+    } else if (range === "1y") {
+      start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
+    }
   } else {
-    // Date-only ISO strings parse as UTC, which valueAsDate expects
-    start = new Date(DATA_START);
+    // -2 days to avoid including incomplete data for today and yesterday
+    end.setDate(end.getDate() - 2);
+    start = new Date(end);
+    if (range === "1m") {
+      start.setMonth(start.getMonth() - 1);
+    } else if (range === "3m") {
+      start.setMonth(start.getMonth() - 3);
+    } else if (range === "1y") {
+      start.setFullYear(start.getFullYear() - 1);
+    }
+  }
+  if (range === "all") {
+    start = new Date(2015, 0, 1);
   }
   return { start, end };
+}
+
+function setDateInputValue(input, date) {
+  const iso = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+  input.value = isMonthInput(input) ? iso.substring(0, 7) : iso;
 }
 
 function setActivePreset(container, range) {
@@ -772,6 +803,14 @@ function setActivePreset(container, range) {
   });
 }
 
+function applyPreset(container, startInput, endInput, range) {
+  if (!startInput || !endInput) return;
+  const { start, end } = getPresetRange(range, isMonthInput(startInput));
+  setDateInputValue(startInput, start);
+  setDateInputValue(endInput, end);
+  setActivePreset(container, range);
+}
+
 function setupDatePresets(containerId, startId, endId) {
   const container = document.getElementById(containerId);
   const startInput = document.getElementById(startId);
@@ -780,11 +819,7 @@ function setupDatePresets(containerId, startId, endId) {
 
   container.querySelectorAll(".date-preset").forEach((button) => {
     button.addEventListener("click", () => {
-      const { start, end } = getPresetRange(button.dataset.range);
-      // valueAsDate handles both date and month input types
-      startInput.valueAsDate = start;
-      endInput.valueAsDate = end;
-      setActivePreset(container, button.dataset.range);
+      applyPreset(container, startInput, endInput, button.dataset.range);
     });
   });
 
