@@ -1180,12 +1180,20 @@ function displayResults(data) {
   resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function formatTimestamp(timestamp) {
+function formatTimestamp(timestamp, granularity) {
   // Timestamps arrive as YYYYMMDDHH ("2026020800") or YYYYMMDD ("20260208")
   const timestampStr = String(timestamp);
   const year = timestampStr.substring(0, 4);
   const month = timestampStr.substring(4, 6);
   const day = timestampStr.substring(6, 8);
+
+  if (granularity === "monthly") {
+    // "Feb 2026"
+    return new Date(year, parseInt(month) - 1).toLocaleDateString(
+      MediaViewI18n.locale(),
+      { year: "numeric", month: "short" },
+    );
+  }
 
   const date = new Date(year, parseInt(month) - 1, day);
 
@@ -1224,7 +1232,9 @@ function displayChart(data) {
     chart.destroy();
   }
 
-  const labels = data.items.map((item) => formatTimestamp(item.timestamp));
+  const labels = data.items.map((item) =>
+    formatTimestamp(item.timestamp, data.metadata.granularity),
+  );
   const views = data.items.map((item) => item.requests || 0);
   const theme = chartThemeColors();
 
@@ -1305,7 +1315,7 @@ function displayDataTable(data, append = false) {
     .map((item) => {
       return `
       <tr>
-        <td>${formatTimestamp(item.timestamp)}</td>
+        <td>${formatTimestamp(item.timestamp, data.metadata.granularity)}</td>
         <td>${(item.requests || 0).toLocaleString()}</td>
       </tr>
     `;
@@ -1348,7 +1358,12 @@ function downloadCSV() {
 
   const headers = [t("query.colDate"), t("query.colTotalViews")];
   const rows = currentData.items.map((item) => {
-    return [csvField(formatTimestamp(item.timestamp)), item.requests || 0];
+    return [
+      csvField(
+        formatTimestamp(item.timestamp, currentData.metadata.granularity),
+      ),
+      item.requests || 0,
+    ];
   });
 
   let csv = headers.join(",") + "\n";
