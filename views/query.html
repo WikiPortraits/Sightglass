@@ -3,6 +3,7 @@
   <head>
     {{head}}
     <title data-i18n="query.docTitle">New Query - Wikimedia Sightglass</title>
+    <link rel="stylesheet" href="/styles/results.css" />
     <link rel="stylesheet" href="/styles/query.css" />
   </head>
 
@@ -265,32 +266,64 @@
             class="results-section"
             style="display: none"
           >
-            <h3>
-              <span data-i18n="query.statisticsFor">Statistics for</span>
-              <span id="result-filename"></span>
-            </h3>
-
-            <div class="stats-summary">
-              <div class="stat-card">
-                <h4 data-i18n="query.totalViews">Total Media Requests</h4>
-                <p id="total-views" class="stat-value">-</p>
-              </div>
-              <div class="stat-card">
-                <h4 data-i18n="query.avgViewsDay">Average Requests/Day</h4>
-                <p id="avg-views" class="stat-value">-</p>
-              </div>
-              <div class="stat-card">
-                <h4 data-i18n="query.peakViews">Peak Requests</h4>
-                <p id="peak-views" class="stat-value">-</p>
-              </div>
-              <div class="stat-card">
-                <h4 data-i18n="query.dataPoints">Data Points</h4>
-                <p id="data-points" class="stat-value">-</p>
+            <div class="job-status">
+              <div class="job-status-header">
+                <div class="job-title-block">
+                  <div
+                    class="job-status-label"
+                    data-i18n="query.mediaViewsForFile"
+                  >
+                    Media requests for File:
+                  </div>
+                  <h2 id="result-filename" class="job-category-heading">—</h2>
+                </div>
+                <div class="status-actions">
+                  <button
+                    id="download-csv"
+                    class="btn btn-subtle"
+                    data-i18n="query.downloadCsv"
+                  >
+                    Download CSV
+                  </button>
+                  <button
+                    id="view-on-commons"
+                    class="btn btn-subtle"
+                    data-i18n="query.viewOnCommons"
+                  >
+                    View on Commons
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div class="chart-container">
-              <h4 data-i18n="query.viewsOverTime">Media Requests Over Time</h4>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-value" id="total-views">-</div>
+                <div class="stat-label" data-i18n="query.totalViews">
+                  Total Media Requests
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="avg-views">-</div>
+                <div class="stat-label" data-i18n="query.avgViewsDay">
+                  Average Requests/Day
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="peak-views">-</div>
+                <div class="stat-label" data-i18n="query.peakViews">
+                  Peak Requests
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value" id="data-points">-</div>
+                <div class="stat-label" data-i18n="query.dataPoints">
+                  Data Points
+                </div>
+              </div>
+            </div>
+
+            <div id="chart-container">
               <canvas
                 id="views-chart"
                 role="img"
@@ -299,17 +332,8 @@
               ></canvas>
             </div>
 
+            <h3 data-i18n="query.detailedData">Detailed Data</h3>
             <div class="data-table-container">
-              <div class="table-header">
-                <h4 data-i18n="query.detailedData">Detailed Data</h4>
-                <button
-                  id="download-csv"
-                  class="button button-small button-secondary"
-                  data-i18n="query.downloadCsv"
-                >
-                  Download CSV
-                </button>
-              </div>
               <div class="table-scroll">
                 <table class="data-table">
                   <thead>
@@ -334,16 +358,6 @@
                   Show More
                 </button>
               </div>
-            </div>
-
-            <div class="actions">
-              <button
-                id="view-on-commons"
-                class="button button-secondary"
-                data-i18n="query.viewOnCommons"
-              >
-                View on Commons
-              </button>
             </div>
           </section>
         </section>

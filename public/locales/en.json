@@ -118,7 +118,7 @@
   "query.searchFailed": "Search failed",
   "query.noMatchingFiles": "No matching files found",
   "query.noMatchingCategories": "No matching categories found",
-  "query.statisticsFor": "Statistics for",
+  "query.mediaViewsForFile": "Media requests for File:",
   "query.totalViews": "Total Media Requests",
   "query.avgViewsDay": "Average Requests/Day",
   "query.peakViews": "Peak Requests",

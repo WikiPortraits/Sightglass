@@ -1159,9 +1159,9 @@ function displayResults(data) {
   const resultsSection = document.getElementById("results-section");
   resultsSection.style.display = "block";
 
-  const resultFilenameSpan = document.getElementById("result-filename");
+  const resultFilenameHeading = document.getElementById("result-filename");
   const commonsUrl = createCommonsLink(data.metadata.filename);
-  resultFilenameSpan.innerHTML = `<a href="${commonsUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(data.metadata.filename)}</a>`;
+  resultFilenameHeading.innerHTML = `<a href="${commonsUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(data.metadata.filename)}</a>`;
 
   const views = data.items.map((item) => item.requests || 0);
   const totalViews = views.reduce((a, b) => a + b, 0);
@@ -1221,7 +1221,7 @@ function applyChartTheme(targetChart) {
   targetChart.options.scales.y.ticks.color = theme.muted;
   targetChart.options.scales.x.grid.color = theme.grid;
   targetChart.options.scales.y.grid.color = theme.grid;
-  targetChart.options.plugins.legend.labels.color = theme.text;
+  targetChart.options.plugins.title.color = theme.text;
   targetChart.update();
 }
 
@@ -1238,35 +1238,64 @@ function displayChart(data) {
   const views = data.items.map((item) => item.requests || 0);
   const theme = chartThemeColors();
 
+  const crosshairPlugin = {
+    id: "crosshair",
+    afterDraw(chart) {
+      const tooltip = chart.tooltip;
+      if (!tooltip) return;
+
+      const activeElements = tooltip.getActiveElements();
+      if (!activeElements || !activeElements.length) return;
+
+      const x = activeElements[0]?.element?.x;
+      if (typeof x !== "number") return;
+
+      const ctx = chart.ctx;
+      const { top, bottom } = chart.chartArea;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(107, 114, 128, 0.5)";
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.restore();
+    },
+  };
+
   chart = new Chart(ctx, {
     type: "line",
     data: {
       labels: labels,
       datasets: [
         {
-          label: t("query.totalViews"),
+          label: t("query.colTotalViews"),
           data: views,
           borderColor: theme.accent,
           backgroundColor: `${theme.accent}1a`,
-          borderWidth: 2,
-          fill: true,
-          tension: 0.1,
+          // Points slow long daily timelines and add nothing
+          pointRadius: views.length > 90 ? 0 : 3,
+          tension: 0.3,
         },
       ],
     },
     options: {
       responsive: true,
       maintainAspectRatio: true,
-      aspectRatio: 2,
+      interaction: {
+        mode: "index",
+        intersect: false,
+      },
       plugins: {
         legend: {
-          display: true,
-          position: "top",
-          labels: { color: theme.text },
+          display: false,
         },
-        tooltip: {
-          mode: "index",
-          intersect: false,
+        title: {
+          display: true,
+          text: t("query.viewsOverTime"),
+          color: theme.text,
+          font: { size: 16 },
         },
       },
       scales: {
@@ -1281,15 +1310,12 @@ function displayChart(data) {
           grid: { color: theme.grid },
         },
         x: {
-          ticks: {
-            color: theme.muted,
-            maxRotation: 45,
-            minRotation: 45,
-          },
+          ticks: { color: theme.muted },
           grid: { color: theme.grid },
         },
       },
     },
+    plugins: [crosshairPlugin],
   });
 }
 
@@ -1351,6 +1377,33 @@ function csvField(value) {
   return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
 }
 
+// "Sightglass Results - <filename> - <start> to <end>.csv"
+function csvFileName(metadata) {
+  const parts = [t("export.fileName"), metadata.filename || "file"];
+  const range = [
+    fileNameDate(metadata.startDate),
+    fileNameDate(metadata.endDate),
+  ]
+    .filter(Boolean)
+    .join(" to ");
+  if (range) parts.push(range);
+  const base = parts
+    .join(" - ")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  return `${base}.csv`;
+}
+
+// ISO date for filenames; locale-formatted dates may contain slashes
+function fileNameDate(raw) {
+  if (!raw) return "";
+  const s = String(raw).replace(/-/g, "");
+  if (s.length !== 8) return "";
+  return `${s.substring(0, 4)}-${s.substring(4, 6)}-${s.substring(6, 8)}`;
+}
+
 function downloadCSV() {
   if (!currentData || !currentData.items) {
     return;
@@ -1374,7 +1427,7 @@ function downloadCSV() {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${currentData.metadata.filename}_stats.csv`;
+  a.download = csvFileName(currentData.metadata);
   a.style.display = "none";
   document.body.appendChild(a);
   a.click();
