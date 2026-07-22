@@ -190,7 +190,7 @@
 .retention-note {
   margin-top: var(--spacing-sm);
   font-size: var(--font-size-sm);
-  color: var(--text-muted);
+  color: var(--error-text);
 }
 
 .retention-note-save {
@@ -198,14 +198,15 @@
   background: none;
   padding: 0;
   font: inherit;
-  color: var(--primary-color);
+  font-weight: var(--font-weight-semibold);
+  color: inherit;
   text-decoration: underline;
   cursor: pointer;
-  transition: color var(--transition-fast);
+  transition: opacity var(--transition-fast);
 }
 
 .retention-note-save:hover {
-  color: var(--primary-hover);
+  opacity: 0.75;
 }
 
 .results-section {
