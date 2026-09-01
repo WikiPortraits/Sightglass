@@ -746,7 +746,7 @@ async function fetchFileMetadata(
   return metadata;
 }
 
-// Convert Commons filename to upload.wikimedia.org base_name path
+// Convert Commons filename to thumb.wikimedia.org base_name path
 function normalizeFilename(filename) {
   let cleanName = filename.trim();
   if (cleanName.startsWith("File:")) {

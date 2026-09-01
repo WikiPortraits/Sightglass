@@ -100,7 +100,7 @@ app.use(
           "'self'",
           "data:",
           "https://commons.wikimedia.org",
-          "https://upload.wikimedia.org",
+          "https://thumb.wikimedia.org",
         ],
         connectSrc: ["'self'", "https://commons.wikimedia.org"],
         fontSrc: ["'self'"],
