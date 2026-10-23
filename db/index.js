@@ -3,7 +3,10 @@ const path = require("path");
 const fs = require("fs");
 const zlib = require("zlib");
 
-const DB_DIR = path.join(__dirname, "..", "data");
+// Defaults to ./data in the repo
+const DB_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, "..", "data");
 const DB_FILE = path.join(DB_DIR, "jobs.db");
 
 // Unsaved jobs are deleted after this many days
@@ -26,6 +29,11 @@ const db = new Database(DB_FILE);
 
 // WAL mode for concurrent access
 db.pragma("journal_mode = WAL");
+
+// WAL needs shared memory that network filesystems
+if (process.env.DB_EXCLUSIVE_LOCK === "1") {
+  db.pragma("locking_mode = EXCLUSIVE");
+}
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
@@ -742,6 +750,7 @@ function resetStaleRunningJobs() {
 }
 
 module.exports = {
+  DATA_DIR: DB_DIR,
   db,
   JOB_RETENTION_DAYS,
   JOB_UNSAVE_GRACE_DAYS,

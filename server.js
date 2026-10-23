@@ -11,7 +11,7 @@ const mediaRouter = require("./routes/media");
 const jobsRouter = require("./routes/jobs");
 const pagesRouter = require("./routes/pages");
 const { renderView } = require("./utils/render");
-const { cleanupOldJobs, db } = require("./db");
+const { cleanupOldJobs, db, DATA_DIR } = require("./db");
 const {
   restorePendingJobs,
   shutdown: shutdownJobProcessor,
@@ -121,8 +121,11 @@ app.use(
 );
 
 // Persist sessions across restarts
-const sessionDb = new Database(path.join(__dirname, "data", "sessions.db"));
+const sessionDb = new Database(path.join(DATA_DIR, "sessions.db"));
 sessionDb.pragma("journal_mode = WAL");
+if (process.env.DB_EXCLUSIVE_LOCK === "1") {
+  sessionDb.pragma("locking_mode = EXCLUSIVE");
+}
 
 app.use(
   session({
